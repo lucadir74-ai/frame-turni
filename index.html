@@ -122,8 +122,8 @@ dialog::backdrop{background:rgba(18,48,58,.45)}
 
 <script>
 // ===== CONFIGURAZIONE: incolla qui URL e chiave "anon" del progetto Supabase faylive =====
-const SUPABASE_URL = 'https://uqaddhbayyhudbmqixic.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxYWRkaGJheXlodWRibXFpeGljIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxODE5NDAsImV4cCI6MjEwMDc1Nzk0MH0.KNW8Wo6b3l87cZWEUncaFVgnHYS_RVWx0GwX8B1rY50';
+const SUPABASE_URL = 'INCOLLA_QUI_URL';
+const SUPABASE_KEY = 'INCOLLA_QUI_ANON_KEY';
 // ========================================================================================
 
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -261,7 +261,7 @@ function analisiTurno(t){
 function vistaTurni(){
   const m=document.getElementById('main');
   const bozze=S.turni.filter(t=>!t.pubblicato).length;
-  let h = barraMese(`<button class="btn" ${bozze?'':'disabled'} onclick="pubblicaMese()">Pubblica ${bozze||''} turni in bozza</button><button class="btn pri" onclick="formTurno()">Nuovo turno</button>`);
+  let h = barraMese(`<button class="btn" ${bozze?'':'disabled'} onclick="formProponi(false)">Proponi turni</button><button class="btn" ${bozze?'':'disabled'} onclick="pubblicaMese()">Pubblica ${bozze||''} turni in bozza</button><button class="btn pri" onclick="formTurno()">Nuovo turno</button>`);
   if(!S.piscine.some(p=>p.attiva)) h+='<div class="vuoto">Prima inserisci le piscine nella scheda Piscine, poi potrai creare i turni.</div>';
   else if(!S.turni.length) h+='<div class="vuoto">Nessun turno in questo mese. Crea il primo con “Nuovo turno”.</div>';
   else{
@@ -374,6 +374,88 @@ async function assegna(tid,cid,ruolo){
 async function togliDaDialog(aid,tid){
   if(errore((await sb.from('tp_assegnazioni').delete().eq('id',aid)).error)) return;
   await caricaMese(); vistaTurni(); formAssegna(tid);
+}
+
+// ---------- PROPOSTA AUTOMATICA ----------
+// Riempie solo i posti liberi dei turni in BOZZA, senza togliere chi è già assegnato.
+// Regole: ruolo giusto, disponibilità, niente sovrapposizioni di orario, almeno una macchina per squadra,
+// piscine più importanti servite per prime e con le persone di livello più alto, turni distribuiti in modo equo.
+function calcolaProposta(includiNonIndicati){
+  const lavoro = S.ass.map(a=>({...a}));
+  const nuove = [], esito = [];
+  const carico = {}; S.collab.forEach(c=>carico[c.id]=lavoro.filter(a=>a.collaboratore_id===c.id).length);
+  const imp = t => (piscinaById(t.piscina_id)||{importanza:1}).importanza;
+  const turni = S.turni.filter(t=>!t.pubblicato).sort((a,b)=> (imp(b)-imp(a)) || a.data.localeCompare(b.data) || hm(a.ora_inizio).localeCompare(hm(b.ora_inizio)));
+
+  const disponibile = (c,t) => {
+    const dich = S.disp.filter(d=>d.collaboratore_id===c.id);
+    if(!dich.length) return includiNonIndicati;
+    return fasceTurno(t).every(f=>dich.some(d=>d.data===t.data && d.fascia===f));
+  };
+  const altriTurniStessoGiorno = (c,t) => lavoro.filter(a=>a.collaboratore_id===c.id && a.turno_id!==t.id)
+    .map(a=>S.turni.find(x=>x.id===a.turno_id)).filter(x=>x && x.data===t.data);
+  const inConflitto = (c,t) => altriTurniStessoGiorno(c,t).some(x=> hm(x.ora_inizio)<hm(t.ora_fine) && hm(t.ora_inizio)<hm(x.ora_fine));
+  const sa = (c,r) => c.ruolo==='FS' || c.ruolo===r;
+
+  for(const t of turni){
+    const squadra = () => lavoro.filter(a=>a.turno_id===t.id);
+    const bisogno = { F: Math.max(0, t.fotografi - squadra().filter(a=>a.ruolo==='F').length),
+                      S: Math.max(0, t.stampatori - squadra().filter(a=>a.ruolo==='S').length) };
+    if(!bisogno.F && !bisogno.S) continue;
+    const aggiunti = [];
+    while(bisogno.F || bisogno.S){
+      const sq = squadra();
+      const haMacchina = sq.some(a=>collabById(a.collaboratore_id)?.auto);
+      let coppie = [];
+      for(const c of S.collab){
+        if(!c.attivo || sq.some(a=>a.collaboratore_id===c.id) || inConflitto(c,t) || !disponibile(c,t)) continue;
+        for(const r of ['S','F']) if(bisogno[r] && sa(c,r)) coppie.push({c,r});
+      }
+      if(!coppie.length) break;
+      const punteggio = ({c,r}) => c.livello*imp(t) - 4*carico[c.id] - 2*altriTurniStessoGiorno(c,t).length + (c.ruolo===r?1:0);
+      // una scelta è "sicura" se dopo restano abbastanza persone per coprire tutti i posti ancora liberi
+      const candidati = [...new Set(coppie.map(x=>x.c))];   // tutti, prima del filtro macchina
+      const sicura = ({c,r}) => {
+        const F = bisogno.F-(r==='F'?1:0), Sx = bisogno.S-(r==='S'?1:0);
+        const altri = candidati.filter(x=>x!==c);
+        return altri.filter(x=>sa(x,'F')).length>=F && altri.filter(x=>sa(x,'S')).length>=Sx && altri.length>=F+Sx;
+      };
+      if(!haMacchina && coppie.some(x=>x.c.auto)) coppie = coppie.filter(x=>x.c.auto);
+      coppie.sort((x,y)=> (sicura(y)-sicura(x)) || punteggio(y)-punteggio(x) || x.c.nome.localeCompare(y.c.nome));
+      const {c,r} = coppie[0];
+      const rec = { turno_id:t.id, collaboratore_id:c.id, ruolo:r };
+      lavoro.push(rec); nuove.push(rec); aggiunti.push(rec);
+      carico[c.id]++; bisogno[r]--;
+    }
+    const avvisi=[];
+    if(bisogno.F) avvisi.push('Mancano '+bisogno.F+(bisogno.F===1?' fotografo':' fotografi'));
+    if(bisogno.S) avvisi.push('Mancano '+bisogno.S+(bisogno.S===1?' stampatore':' stampatori'));
+    const sq = squadra();
+    if(sq.length && !sq.some(a=>collabById(a.collaboratore_id)?.auto)) avvisi.push('Nessuno della squadra ha la macchina');
+    esito.push({ t, squadra:sq, aggiunti, avvisi });
+  }
+  esito.sort((a,b)=> a.t.data.localeCompare(b.t.data) || hm(a.t.ora_inizio).localeCompare(hm(b.t.ora_inizio)));
+  return { nuove, esito };
+}
+
+function formProponi(includi){
+  const { nuove, esito } = calcolaProposta(includi);
+  const corpo = `
+    <label class="spunta"><input type="checkbox" ${includi?'checked':''} onchange="formProponi(this.checked)"> Usa anche chi non ha indicato nessuna disponibilità nel mese</label>
+    <p class="note" style="margin:0 0 10px">Riempie solo i posti liberi dei turni in bozza. Chi è già assegnato resta dov'è. Dopo puoi correggere a mano.</p>
+    ${esito.length ? esito.map(({t,squadra,aggiunti,avvisi})=>{
+      const p=piscinaById(t.piscina_id)||{nome:'?',importanza:1};
+      return `<div class="turno bozza" style="margin-bottom:8px">
+        <div class="t-head"><b>${esc(p.nome)}</b>${puntini(p.importanza)}<span class="t-ora">${nomeGiorno(t.data)}, ${hm(t.ora_inizio)}–${hm(t.ora_fine)}</span></div>
+        <div class="chips" style="margin-top:6px">${squadra.map(x=>{const c=collabById(x.collaboratore_id)||{nome:'?'};const nuovo=aggiunti.includes(x);
+          return `<span class="chip" style="padding-right:10px;${nuovo?'border-color:var(--ok);background:#E7F3EC':''}"><span class="r ${x.ruolo}">${x.ruolo==='F'?'FOTO':'STAMPA'}</span>${esc(c.nome)}${c.auto?' 🚗':''}${nuovo?' <small>nuovo</small>':''}</span>`}).join('')||'<span class="note">Nessuno</span>'}</div>
+        ${avvisi.length?`<ul class="avvisi">${avvisi.map(v=>'<li>⚠ '+esc(v)+'</li>').join('')}</ul>`:''}
+      </div>`;}).join('') : '<div class="vuoto">Tutti i turni in bozza sono già completi.</div>'}`;
+  apriDialog('Proposta turni ('+nuove.length+' assegnazioni nuove)', corpo, nuove.length ? async ()=>{
+    const r = await sb.from('tp_assegnazioni').insert(nuove);
+    if(errore(r.error)) return false;
+    toast(nuove.length+' assegnazioni inserite.'); await ricarica();
+  } : null, 'Applica proposta');
 }
 
 // ---------- DISPONIBILITÀ ----------
