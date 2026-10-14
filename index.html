@@ -80,7 +80,8 @@ main{max-width:1100px;margin:0 auto;padding:16px}
 .griglia table{border-collapse:collapse;font-size:.82rem}
 .griglia th,.griglia td{border-bottom:1px solid var(--line);padding:4px;text-align:center}
 .griglia th{font-weight:600;color:var(--muted);white-space:nowrap}
-.griglia th.ev{color:var(--water)}
+.griglia th.ev{color:var(--water);vertical-align:top}
+.griglia .pisc{font-weight:500;font-size:.72rem;color:var(--muted);margin-top:2px;line-height:1.25}
 .griglia th.ev::after{content:'';display:block;height:3px;background:var(--water);border-radius:2px;margin-top:2px}
 .griglia .nome{position:sticky;left:0;background:var(--card);text-align:left;font-weight:600;padding:4px 10px;white-space:nowrap;z-index:1}
 .fx{display:flex;gap:2px;justify-content:center}
@@ -463,23 +464,26 @@ function formProponi(includi){
 // ---------- DISPONIBILITÀ ----------
 function vistaDisp(){
   const m=document.getElementById('main');
-  const [,,ult]=limitiMese(S.mese);
   const attivi=S.collab.filter(c=>c.attivo);
-  const conTurni=new Set(S.turni.map(t=>t.data));
-  let h=barraMese('<span class="note">Di solito la compilano i collaboratori; qui potete correggerla voi.</span>');
+  // solo le date in cui ci sono piscine, e solo le fasce che servono quel giorno
+  const giorni=[...new Set(S.turni.map(t=>t.data))].sort();
+  let h=barraMese('<span class="note">Solo le date con piscine. Di solito la compilano i collaboratori; qui potete correggerla voi.</span>');
+  if(!giorni.length){ m.innerHTML=h+'<div class="vuoto">Nessuna data in questo mese. Inserisci prima le piscine con data e orario nella scheda Turni: qui compariranno solo quei giorni.</div>'; return; }
   if(!attivi.length){ m.innerHTML=h+'<div class="vuoto">Nessun collaboratore attivo.</div>'; return; }
-  const giorni=[]; for(let g=1; g<=ult; g++) giorni.push(S.mese+'-'+pad(g));
+  const fasceGiorno = d => { const f=new Set(); S.turni.filter(t=>t.data===d).forEach(t=>fasceTurno(t).forEach(x=>f.add(x))); return ['M','P'].filter(x=>f.has(x)); };
   h+='<div class="griglia"><table><thead><tr><th class="nome">Collaboratore</th>'+giorni.map(d=>{
     const [y,mm,g]=d.split('-').map(Number); const wd=new Date(y,mm-1,g).toLocaleDateString('it-IT',{weekday:'short'});
-    return `<th class="${conTurni.has(d)?'ev':''}" title="${conTurni.has(d)?'Ci sono turni':''}">${wd}<br>${g}</th>`;
+    const tg=S.turni.filter(t=>t.data===d);
+    const piscine=tg.map(t=>esc((piscinaById(t.piscina_id)||{nome:'?'}).nome)+' '+hm(t.ora_inizio)).join('<br>');
+    return `<th class="ev">${wd} ${g}<div class="pisc">${piscine}</div></th>`;
   }).join('')+'</tr></thead><tbody>';
   attivi.forEach(c=>{
     h+=`<tr><td class="nome">${esc(c.nome)}</td>`+giorni.map(d=>{
       const s=f=>S.disp.some(x=>x.collaboratore_id===c.id&&x.data===d&&x.fascia===f);
-      return `<td><div class="fx"><button class="${s('M')?'si':''}" title="Mattina" onclick="toggleDisp('${c.id}','${d}','M')">M</button><button class="${s('P')?'si':''}" title="Pomeriggio" onclick="toggleDisp('${c.id}','${d}','P')">P</button></div></td>`;
+      return '<td><div class="fx">'+fasceGiorno(d).map(f=>`<button class="${s(f)?'si':''}" title="${f==='M'?'Mattina':'Pomeriggio'}" onclick="toggleDisp('${c.id}','${d}','${f}')">${f}</button>`).join('')+'</div></td>';
     }).join('')+'</tr>';
   });
-  m.innerHTML=h+'</tbody></table></div>';
+  m.innerHTML=h+'</tbody></table></div><p class="note">M = mattina (turni che iniziano prima delle 13), P = pomeriggio (turni che finiscono dopo le 13).</p>';
 }
 async function toggleDisp(cid,data,fascia){
   const c=S.disp.find(x=>x.collaboratore_id===cid&&x.data===data&&x.fascia===fascia);
