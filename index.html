@@ -82,6 +82,7 @@ main{max-width:1100px;margin:0 auto;padding:16px}
 .griglia th{font-weight:600;color:var(--muted);white-space:nowrap}
 .griglia th.ev{color:var(--water);vertical-align:top}
 .griglia .pisc{font-weight:500;font-size:.72rem;color:var(--muted);margin-top:2px;line-height:1.25}
+.griglia .pisc .ore{font-variant-numeric:tabular-nums;white-space:nowrap}
 .griglia th.ev::after{content:'';display:block;height:3px;background:var(--water);border-radius:2px;margin-top:2px}
 .griglia .nome{position:sticky;left:0;background:var(--card);text-align:left;font-weight:600;padding:4px 10px;white-space:nowrap;z-index:1}
 .fx{display:flex;gap:2px;justify-content:center}
@@ -474,7 +475,7 @@ function vistaDisp(){
   h+='<div class="griglia"><table><thead><tr><th class="nome">Collaboratore</th>'+giorni.map(d=>{
     const [y,mm,g]=d.split('-').map(Number); const wd=new Date(y,mm-1,g).toLocaleDateString('it-IT',{weekday:'short'});
     const tg=S.turni.filter(t=>t.data===d);
-    const piscine=tg.map(t=>esc((piscinaById(t.piscina_id)||{nome:'?'}).nome)+' '+hm(t.ora_inizio)).join('<br>');
+    const piscine=tg.map(t=>esc((piscinaById(t.piscina_id)||{nome:'?'}).nome)+'<br><span class="ore">'+hm(t.ora_inizio)+'–'+hm(t.ora_fine)+'</span>').join('<br>');
     return `<th class="ev">${wd} ${g}<div class="pisc">${piscine}</div></th>`;
   }).join('')+'</tr></thead><tbody>';
   attivi.forEach(c=>{
