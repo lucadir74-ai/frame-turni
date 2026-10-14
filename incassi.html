@@ -101,11 +101,12 @@ function disegna(){
       </div>`).join('') || '<p class="nota" style="margin:0">Nessuna persona assegnata a questo turno.</p>'}
     </div>
     <div class="box riep"><h2>Riepilogo</h2>
-      <div><span>Incasso</span><span id="r-inc"></span></div>
+      <div><span>Contanti</span><span id="r-inc"></span></div>
       <div><span>% piscina</span><span id="r-perc"></span></div>
       <div><span>Spese</span><span id="r-spese"></span></div>
       <div><span>Compensi</span><span id="r-comp"></span></div>
-      <div class="netto"><span>Resta</span><span id="r-netto"></span></div>
+      <div class="netto"><span>Contanti che restano</span><span id="r-netto"></span></div>
+      <p class="nota" style="margin-top:8px">Il POS non entra in questo conto: arriva direttamente sul conto. POS di oggi: <b id="r-pos"></b></p>
     </div>
     <button class="btn pri" id="salva" onclick="salva()">Salva</button>
     <p class="nota">${i.aggiornato_il?'Ultimo salvataggio: '+new Date(i.aggiornato_il).toLocaleString('it-IT',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})+'. ':''}Puoi correggere e salvare di nuovo fino al ${scade}. Scrivi solo i numeri, per esempio 120 o 12,50.</p>
@@ -124,12 +125,12 @@ function v0(x){ const n=num(x); return (n==null||isNaN(n)) ? 0 : n; }
 function totale(){
   const c=num(document.getElementById('cash').value)||0, p=num(document.getElementById('pos').value)||0;
   document.getElementById('tot').textContent = (isNaN(c)||isNaN(p)) ? '—' : eur(c+p);
-  const inc=v0(document.getElementById('cash').value)+v0(document.getElementById('pos').value);
+  const inc=v0(document.getElementById('cash').value);
   const perc=v0(document.getElementById('perc').value);
   const spese=[...document.querySelectorAll('#spese .si')].reduce((a,e)=>a+v0(e.value),0);
   const comp=[...document.querySelectorAll('.comp .ci')].reduce((a,e)=>a+v0(e.value),0);
   const set=(id,v)=>{ const e=document.getElementById(id); if(e) e.textContent=v; };
-  set('r-inc',eur(inc)); set('r-perc','− '+eur(perc)); set('r-spese','− '+eur(spese)); set('r-comp','− '+eur(comp)); set('r-netto',eur(inc-perc-spese-comp));
+  set('r-inc',eur(inc)); set('r-perc','− '+eur(perc)); set('r-spese','− '+eur(spese)); set('r-comp','− '+eur(comp)); set('r-netto',eur(inc-perc-spese-comp)); set('r-pos',eur(v0(document.getElementById('pos').value)));
 }
 async function salva(){
   const cash=num(document.getElementById('cash').value), pos=num(document.getElementById('pos').value), perc=num(document.getElementById('perc').value);

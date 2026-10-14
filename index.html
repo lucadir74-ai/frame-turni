@@ -414,9 +414,9 @@ function rigaIncassi(t){
   }
   if(comp.length) h+='<div class="note" style="color:var(--ink)"><b>Compensi:</b> '+comp.map(x=>esc(x.c?.nome||'?')+' '+(x.k.importo!=null?eur(x.k.importo):'—')+(x.k.nota?' ('+esc(x.k.nota)+')':'')).join(', ')+'</div>';
   if(i || sp.length || comp.length){
-    const inc=Number(i?.cash||0)+Number(i?.pos||0);
+    const cash=Number(i?.cash||0), pos=Number(i?.pos||0);
     const usc=Number(i?.percentuale_piscina||0)+sp.reduce((a,x)=>a+Number(x.importo||0),0)+comp.reduce((a,x)=>a+Number(x.k.importo||0),0);
-    h+='<div class="note" style="color:var(--ink)"><b>Resta:</b> '+eur(inc-usc)+' <span style="color:var(--muted)">(incasso '+eur(inc)+' meno uscite '+eur(usc)+')</span></div>';
+    h+='<div class="note" style="color:var(--ink)"><b>Contanti che restano:</b> '+eur(cash-usc)+' <span style="color:var(--muted)">(contanti '+eur(cash)+' meno uscite '+eur(usc)+'). Margine con POS: '+eur(cash+pos-usc)+'</span></div>';
   }
   return h;
 }
