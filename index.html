@@ -5,15 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Frame · Turni piscine</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="config.js"></script>
 <style>
 :root{
-  --tile:#EEF4F5; --card:#fff; --ink:#12303A; --muted:#5B7480; --line:#D3E1E5;
-  --water:#0F6B85; --water-soft:#DCEEF3; --red:#C8333A; --yellow:#E9B824; --ok:#2E7D4F; --warn:#B4541A;
-  --f:'Barlow',system-ui,-apple-system,'Segoe UI',sans-serif;
-  --fc:'Barlow Semi Condensed','Barlow',system-ui,sans-serif;
+  --tile:#F4F4F5; --card:#fff; --ink:#111111; --muted:#6B6C70; --line:#E1E1E4;
+  --water:#EB0089;--nero:#000000;--grigio:#818286; --water-soft:#FDE6F2; --red:#C8333A; --yellow:#EB0089; --ok:#2E7D4F; --warn:#B4541A;
+  --f:'Jost',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --fc:'Jost',system-ui,sans-serif;
 }
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--tile);color:var(--ink);font:16px/1.45 var(--f)}
@@ -22,12 +22,14 @@ button,input,select,textarea{font:inherit;color:inherit}
 button{cursor:pointer}
 :focus-visible{outline:3px solid var(--yellow);outline-offset:2px}
 
-header{background:var(--water);color:#fff;position:sticky;top:0;z-index:20}
+header{background:var(--nero);color:#fff;position:sticky;top:0;z-index:20}
 .top{display:flex;align-items:center;gap:12px;padding:12px 16px;max-width:1100px;margin:0 auto}
-.top h1{font:700 1.3rem var(--fc);margin:0;letter-spacing:.01em;flex:1}
+.top h1{font:600 1.15rem var(--fc);margin:0;letter-spacing:.02em;flex:1;color:#fff;border-left:1px solid #444;padding-left:12px}
+.logo{height:36px;width:auto;display:block}
+.logo-login{width:220px;max-width:100%;height:auto;display:block;margin:0 0 14px}
 .top .chi{font-size:.85rem;opacity:.85}
 .top button{background:transparent;border:1px solid rgba(255,255,255,.5);color:#fff;border-radius:6px;padding:4px 10px;font-size:.85rem}
-.corsia{height:6px;background:repeating-linear-gradient(90deg,var(--red) 0 16px,#fff 16px 24px,var(--water) 24px 40px,#fff 40px 48px)}
+.corsia{height:3px;background:var(--water)}
 nav{display:flex;gap:4px;max-width:1100px;margin:0 auto;padding:0 12px;overflow-x:auto}
 nav button{background:none;border:0;color:#fff;opacity:.75;padding:10px 12px;font-weight:600;border-bottom:3px solid transparent;white-space:nowrap}
 nav button[aria-current=true]{opacity:1;border-bottom-color:var(--yellow)}
@@ -45,7 +47,7 @@ main{max-width:1100px;margin:0 auto;padding:16px}
 .giorno{margin:22px 0 8px;font:700 1.05rem var(--fc);text-transform:capitalize;display:flex;align-items:baseline;gap:10px}
 .giorno small{font:500 .85rem var(--f);color:var(--muted);text-transform:none}
 .turno{background:var(--card);border:1px solid var(--line);border-left:6px solid var(--water);border-radius:10px;padding:12px 14px;margin-bottom:10px}
-.turno.bozza{border-left-color:#9DB3BB}
+.turno.bozza{border-left-color:var(--grigio)}
 .t-head{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:baseline}
 .t-head b{font:700 1.15rem var(--fc)}
 .t-ora{font-variant-numeric:tabular-nums;color:var(--muted)}
@@ -53,14 +55,14 @@ main{max-width:1100px;margin:0 auto;padding:16px}
 .stato.bozza{background:#EDF1F2;color:var(--muted)}
 .imp{display:inline-flex;gap:2px;vertical-align:middle}
 .imp i{width:7px;height:7px;border-radius:50%;background:var(--line)}
-.imp i.on{background:var(--red)}
+.imp i.on{background:var(--water)}
 .req{display:flex;gap:14px;margin:8px 0;font-size:.9rem;color:var(--muted)}
 .req .pieno{color:var(--ok);font-weight:600}
 .req .manca{color:var(--warn);font-weight:600}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
 .chip{display:inline-flex;align-items:center;gap:6px;background:var(--tile);border:1px solid var(--line);border-radius:99px;padding:3px 4px 3px 10px;font-size:.9rem}
 .chip .r{font:700 .72rem var(--fc);background:var(--water);color:#fff;border-radius:4px;padding:0 5px}
-.chip .r.S{background:var(--red)}
+.chip .r.S{background:var(--grigio)}
 .chip button{border:0;background:none;color:var(--muted);font-size:1rem;line-height:1;padding:2px 6px;border-radius:99px}
 .avvisi{margin:8px 0 0;padding:0;list-style:none;font-size:.86rem;color:var(--warn)}
 .azioni{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
@@ -86,7 +88,7 @@ main{max-width:1100px;margin:0 auto;padding:16px}
 .griglia th.ev::after{content:'';display:block;height:3px;background:var(--water);border-radius:2px;margin-top:2px}
 .griglia .nome{position:sticky;left:0;background:var(--card);text-align:left;font-weight:600;padding:4px 10px;white-space:nowrap;z-index:1}
 .fx{display:flex;gap:2px;justify-content:center}
-.fx button{width:22px;height:22px;border:1px solid var(--line);border-radius:4px;background:#fff;font:700 .7rem var(--fc);color:#9DB3BB;padding:0}
+.fx button{width:22px;height:22px;border:1px solid var(--line);border-radius:4px;background:#fff;font:700 .7rem var(--fc);color:#B5B6B9;padding:0}
 .fx button.si{background:var(--ok);border-color:var(--ok);color:#fff}
 
 dialog{border:0;border-radius:14px;padding:0;width:min(560px,94vw);max-height:90vh;color:var(--ink)}
@@ -170,7 +172,7 @@ async function avvio(){
 function schermataLogin(msg){
   document.getElementById('app').innerHTML = `
   <div class="login"><div class="corsia"></div><div class="corpo">
-    <h1>Turni piscine</h1><p>Frame About You</p>
+    <img class="logo-login" src="logo-nero.png" alt="Frame About You"><h1>Turni piscine</h1><p>Accesso organizzatori</p>
     <form id="fl">
       <label class="campo"><span>Email</span><input name="email" type="email" autocomplete="username" required></label>
       <label class="campo"><span>Password</span><input name="pw" type="password" autocomplete="current-password" required></label>
@@ -244,7 +246,7 @@ function disegna(){
   const tabs=[['turni','Turni'],['disponibilita','Disponibilità'],['collaboratori','Collaboratori'],['piscine','Piscine']];
   document.getElementById('app').innerHTML = `
   <header>
-    <div class="top"><h1>Turni piscine</h1><span class="chi">${esc(S.me.nome)}</span><button onclick="esci()">Esci</button></div>
+    <div class="top"><img class="logo" src="logo-bianco.png" alt="Frame About You"><h1>Turni piscine</h1><span class="chi">${esc(S.me.nome)}</span><button onclick="esci()">Esci</button></div>
     <nav>${tabs.map(([k,l])=>`<button aria-current="${S.tab===k}" onclick="vai('${k}')">${l}</button>`).join('')}</nav>
     <div class="corsia"></div>
   </header>

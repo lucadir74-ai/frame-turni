@@ -4,25 +4,26 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Frame · Calendario piscine</title>
-<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="config.js"></script>
 <style>
-:root{--tile:#EEF4F5;--card:#fff;--ink:#12303A;--muted:#5B7480;--line:#D3E1E5;--water:#0F6B85;--water-soft:#DCEEF3;--red:#C8333A;--yellow:#E9B824;--ok:#2E7D4F;
-  --f:'Barlow',system-ui,-apple-system,'Segoe UI',sans-serif;--fc:'Barlow Semi Condensed','Barlow',system-ui,sans-serif;
+:root{--tile:#F4F4F5;--card:#fff;--ink:#111111;--muted:#6B6C70;--line:#E1E1E4;--water:#EB0089;--nero:#000000;--grigio:#818286;--water-soft:#FDE6F2;--red:#C8333A;--yellow:#EB0089;--ok:#2E7D4F;
+  --f:'Jost',system-ui,-apple-system,'Segoe UI',sans-serif;--fc:'Jost',system-ui,sans-serif;
   padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--tile);color:var(--ink);font:16px/1.45 var(--f)}
 button{font:inherit;cursor:pointer}
 :focus-visible{outline:3px solid var(--yellow);outline-offset:2px}
-header{background:var(--water);color:#fff;position:sticky;top:0;z-index:5}
+header{background:var(--nero);color:#fff;position:sticky;top:0;z-index:5}
 .top{max-width:640px;margin:0 auto;padding:12px 16px;display:flex;align-items:center;gap:10px}
-.top h1{font:700 1.25rem var(--fc);margin:0;flex:1}
+.top h1{font:600 1.1rem var(--fc);margin:0;flex:1;border-left:1px solid #444;padding-left:10px}
+.logo{height:32px;width:auto;display:block}
 .top button{background:transparent;border:1px solid rgba(255,255,255,.5);color:#fff;border-radius:6px;padding:4px 10px;font-size:.85rem}
 .seg{max-width:640px;margin:0 auto;display:flex;padding:0 12px}
 .seg button{flex:1;background:none;border:0;color:#fff;opacity:.75;padding:10px 6px;font-weight:600;border-bottom:3px solid transparent}
 .seg button[aria-current=true]{opacity:1;border-bottom-color:var(--yellow)}
-.corsia{height:6px;background:repeating-linear-gradient(90deg,var(--red) 0 16px,#fff 16px 24px,var(--water) 24px 40px,#fff 40px 48px)}
+.corsia{height:3px;background:var(--water)}
 main{max-width:640px;margin:0 auto;padding:16px}
 .intro{color:var(--muted);margin:0 0 14px;font-size:.95rem}
 .giorno{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px}
@@ -37,7 +38,7 @@ main{max-width:640px;margin:0 auto;padding:16px}
 .squadra{margin-top:6px;font-size:.9rem;color:var(--muted)}
 .squadra .io{color:var(--ink);font-weight:700}
 .tag{display:inline-block;font:700 .72rem var(--fc);color:#fff;background:var(--water);border-radius:4px;padding:0 6px;margin-right:4px}
-.tag.S{background:var(--red)}
+.tag.S{background:var(--grigio)}
 .chi{display:grid;gap:8px}
 .chi button{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;text-align:left;font-weight:600;font-size:1.05rem}
 .vuoto{background:var(--card);border:1px dashed var(--line);border-radius:12px;padding:26px;text-align:center;color:var(--muted)}
@@ -59,7 +60,7 @@ function fasceTurno(t){ const f=[]; if(hm(t.ora_inizio)<'13:00') f.push('M'); if
 function toast(m,err){ const t=document.getElementById('toast'); t.textContent=m; t.className=err?'err':''; t.style.display='block'; clearTimeout(toast._t); toast._t=setTimeout(()=>t.style.display='none', err?5000:1800); }
 function leggiIo(){ try{ return localStorage.getItem(CHIAVE_NOME); }catch(e){ return null; } }
 function scriviIo(v){ try{ v ? localStorage.setItem(CHIAVE_NOME,v) : localStorage.removeItem(CHIAVE_NOME); }catch(e){} }
-function messaggio(t){ document.getElementById('app').innerHTML='<header><div class="top"><h1>Calendario piscine</h1></div><div class="corsia"></div></header><main><div class="vuoto">'+t+'</div></main>'; }
+function messaggio(t){ document.getElementById('app').innerHTML='<header><div class="top"><img class="logo" src="logo-bianco.png" alt="Frame About You"><h1>Calendario piscine</h1></div><div class="corsia"></div></header><main><div class="vuoto">'+t+'</div></main>'; }
 
 async function avvio(){
   if(!window.supabase) return messaggio('Connessione assente: ricarica la pagina.');
@@ -75,7 +76,7 @@ async function avvio(){
 }
 
 function sceltaNome(){
-  document.getElementById('app').innerHTML = `<header><div class="top"><h1>Chi sei?</h1></div><div class="corsia"></div></header>
+  document.getElementById('app').innerHTML = `<header><div class="top"><img class="logo" src="logo-bianco.png" alt="Frame About You"><h1>Chi sei?</h1></div><div class="corsia"></div></header>
   <main><p class="intro">Tocca il tuo nome. Questo telefono se lo ricorderà.</p>
   <div class="chi">${S.staff.map(c=>`<button onclick="scegli('${c.id}')">${esc(c.nome)}</button>`).join('') || '<div class="vuoto">Nessun collaboratore inserito.</div>'}</div></main>`;
 }
@@ -90,7 +91,7 @@ async function caricaDisp(){
 
 function disegna(){
   document.getElementById('app').innerHTML = `<header>
-    <div class="top"><h1>Ciao ${esc(S.io.nome)}</h1><button onclick="cambiaNome()">Non sei tu?</button></div>
+    <div class="top"><img class="logo" src="logo-bianco.png" alt="Frame About You"><h1>Ciao ${esc(S.io.nome)}</h1><button onclick="cambiaNome()">Non sei tu?</button></div>
     <div class="seg"><button aria-current="${S.vista==='disp'}" onclick="vai('disp')">Disponibilità</button><button aria-current="${S.vista==='turni'}" onclick="vai('turni')">Turni</button></div>
     <div class="corsia"></div></header><main id="main"></main>`;
   S.vista==='disp' ? vistaDisp() : vistaTurni();

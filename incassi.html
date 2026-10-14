@@ -4,23 +4,24 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Frame · Incassi piscina</title>
-<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="config.js"></script>
 <style>
-:root{--tile:#EEF4F5;--card:#fff;--ink:#12303A;--muted:#5B7480;--line:#D3E1E5;--water:#0F6B85;--red:#C8333A;--yellow:#E9B824;--ok:#2E7D4F;
-  --f:'Barlow',system-ui,-apple-system,'Segoe UI',sans-serif;--fc:'Barlow Semi Condensed','Barlow',system-ui,sans-serif;
+:root{--tile:#F4F4F5;--card:#fff;--ink:#111111;--muted:#6B6C70;--line:#E1E1E4;--water:#EB0089;--nero:#000000;--grigio:#818286;--red:#C8333A;--yellow:#EB0089;--ok:#2E7D4F;
+  --f:'Jost',system-ui,-apple-system,'Segoe UI',sans-serif;--fc:'Jost',system-ui,sans-serif;
   padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--tile);color:var(--ink);font:16px/1.45 var(--f)}
 button,input{font:inherit;color:inherit}
 button{cursor:pointer}
 :focus-visible{outline:3px solid var(--yellow);outline-offset:2px}
-header{background:var(--water);color:#fff}
+header{background:var(--nero);color:#fff}
 .top{max-width:520px;margin:0 auto;padding:14px 16px}
-.top h1{font:700 1.35rem var(--fc);margin:0}
+.top h1{font:600 1.35rem var(--fc);margin:0}
+.logo{height:30px;width:auto;display:block;margin-bottom:10px}
 .top p{margin:2px 0 0;opacity:.9;text-transform:capitalize}
-.corsia{height:6px;background:repeating-linear-gradient(90deg,var(--red) 0 16px,#fff 16px 24px,var(--water) 24px 40px,#fff 40px 48px)}
+.corsia{height:3px;background:var(--water)}
 main{max-width:520px;margin:0 auto;padding:16px}
 .box{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
 .box h2{font:700 1.05rem var(--fc);margin:0 0 10px}
@@ -34,7 +35,7 @@ input.euro{text-align:right;font-variant-numeric:tabular-nums}
 .comp .riga1{display:grid;grid-template-columns:1fr 7em;gap:8px;align-items:center;margin-bottom:6px}
 .comp b{font-weight:600}
 .tag{display:inline-block;font:700 .7rem var(--fc);color:#fff;background:var(--water);border-radius:4px;padding:0 5px;margin-right:6px;vertical-align:middle}
-.tag.S{background:var(--red)}
+.tag.S{background:var(--grigio)}
 .riep div{display:flex;justify-content:space-between;font-variant-numeric:tabular-nums;padding:2px 0}
 .riep .netto{border-top:2px solid var(--ink);margin-top:6px;padding-top:6px;font-weight:700;font-size:1.1rem}
 .btn{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:9px 14px;font-weight:600}
@@ -60,7 +61,7 @@ function eur(n){ return (n||0).toLocaleString('it-IT',{style:'currency',currency
 function mostra(n){ return n==null ? '' : String(n).replace('.',','); }
 function num(v){ v=String(v||'').trim().replace(/\s|€/g,''); if(!v) return null; if(v.includes(',')) v=v.replace(/\./g,'').replace(',','.'); const n=Number(v); return isNaN(n)?NaN:Math.round(n*100)/100; }
 function toast(m,err){ const t=document.getElementById('toast'); t.textContent=m; t.className=err?'err':''; t.style.display='block'; clearTimeout(toast._t); toast._t=setTimeout(()=>t.style.display='none', err?5000:2200); }
-function messaggio(titolo,t){ document.getElementById('app').innerHTML='<header><div class="top"><h1>'+titolo+'</h1></div><div class="corsia"></div></header><main><div class="vuoto">'+t+'</div></main>'; }
+function messaggio(titolo,t){ document.getElementById('app').innerHTML='<header><div class="top"><img class="logo" src="logo-bianco.png" alt="Frame About You"><h1>'+titolo+'</h1></div><div class="corsia"></div></header><main><div class="vuoto">'+t+'</div></main>'; }
 
 async function avvio(){
   if(!window.supabase) return messaggio('Incassi','Connessione assente: ricarica la pagina.');
@@ -80,7 +81,7 @@ function disegna(){
   const i=D.incasso||{};
   const [y,m,g]=D.scade.split('-').map(Number);
   const scade=new Date(y,m-1,g).toLocaleDateString('it-IT',{day:'numeric',month:'long'});
-  document.getElementById('app').innerHTML = `<header><div class="top"><h1>${esc(D.piscina)}</h1><p>${nomeGiorno(D.data)}, ${hm(D.ora_inizio)}–${hm(D.ora_fine)}</p></div><div class="corsia"></div></header>
+  document.getElementById('app').innerHTML = `<header><div class="top"><img class="logo" src="logo-bianco.png" alt="Frame About You"><h1>${esc(D.piscina)}</h1><p>${nomeGiorno(D.data)}, ${hm(D.ora_inizio)}–${hm(D.ora_fine)}</p></div><div class="corsia"></div></header>
   <main>
     <div class="box"><h2>Incasso</h2>
       <label class="campo"><span>Contanti</span><input class="euro" id="cash" inputmode="decimal" placeholder="0,00" value="${mostra(i.cash)}" oninput="totale()"></label>
