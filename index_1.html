@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Frame · Turni piscine</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<style>
+:root{
+  --tile:#EEF4F5; --card:#fff; --ink:#12303A; --muted:#5B7480; --line:#D3E1E5;
+  --water:#0F6B85; --water-soft:#DCEEF3; --red:#C8333A; --yellow:#E9B824; --ok:#2E7D4F; --warn:#B4541A;
+  --f:'Barlow',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --fc:'Barlow Semi Condensed','Barlow',system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--tile);color:var(--ink);font:16px/1.45 var(--f)}
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:3px solid var(--yellow);outline-offset:2px}
+
+header{background:var(--water);color:#fff;position:sticky;top:0;z-index:20}
+.top{display:flex;align-items:center;gap:12px;padding:12px 16px;max-width:1100px;margin:0 auto}
+.top h1{font:700 1.3rem var(--fc);margin:0;letter-spacing:.01em;flex:1}
+.top .chi{font-size:.85rem;opacity:.85}
+.top button{background:transparent;border:1px solid rgba(255,255,255,.5);color:#fff;border-radius:6px;padding:4px 10px;font-size:.85rem}
+.corsia{height:6px;background:repeating-linear-gradient(90deg,var(--red) 0 16px,#fff 16px 24px,var(--water) 24px 40px,#fff 40px 48px)}
+nav{display:flex;gap:4px;max-width:1100px;margin:0 auto;padding:0 12px;overflow-x:auto}
+nav button{background:none;border:0;color:#fff;opacity:.75;padding:10px 12px;font-weight:600;border-bottom:3px solid transparent;white-space:nowrap}
+nav button[aria-current=true]{opacity:1;border-bottom-color:var(--yellow)}
+
+main{max-width:1100px;margin:0 auto;padding:16px}
+.barra{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:16px}
+.barra .mese{font:700 1.25rem var(--fc);min-width:9.5em;text-align:center;text-transform:capitalize}
+.spazio{flex:1}
+.btn{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 14px;font-weight:600}
+.btn.pri{background:var(--water);border-color:var(--water);color:#fff}
+.btn.pic{padding:4px 10px;font-size:.88rem}
+.btn.del{color:var(--red)}
+.btn:disabled{opacity:.45;cursor:default}
+
+.giorno{margin:22px 0 8px;font:700 1.05rem var(--fc);text-transform:capitalize;display:flex;align-items:baseline;gap:10px}
+.giorno small{font:500 .85rem var(--f);color:var(--muted);text-transform:none}
+.turno{background:var(--card);border:1px solid var(--line);border-left:6px solid var(--water);border-radius:10px;padding:12px 14px;margin-bottom:10px}
+.turno.bozza{border-left-color:#9DB3BB}
+.t-head{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:baseline}
+.t-head b{font:700 1.15rem var(--fc)}
+.t-ora{font-variant-numeric:tabular-nums;color:var(--muted)}
+.stato{font-size:.78rem;font-weight:600;padding:2px 8px;border-radius:99px;background:var(--water-soft);color:var(--water)}
+.stato.bozza{background:#EDF1F2;color:var(--muted)}
+.imp{display:inline-flex;gap:2px;vertical-align:middle}
+.imp i{width:7px;height:7px;border-radius:50%;background:var(--line)}
+.imp i.on{background:var(--red)}
+.req{display:flex;gap:14px;margin:8px 0;font-size:.9rem;color:var(--muted)}
+.req .pieno{color:var(--ok);font-weight:600}
+.req .manca{color:var(--warn);font-weight:600}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-flex;align-items:center;gap:6px;background:var(--tile);border:1px solid var(--line);border-radius:99px;padding:3px 4px 3px 10px;font-size:.9rem}
+.chip .r{font:700 .72rem var(--fc);background:var(--water);color:#fff;border-radius:4px;padding:0 5px}
+.chip .r.S{background:var(--red)}
+.chip button{border:0;background:none;color:var(--muted);font-size:1rem;line-height:1;padding:2px 6px;border-radius:99px}
+.avvisi{margin:8px 0 0;padding:0;list-style:none;font-size:.86rem;color:var(--warn)}
+.azioni{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.note{font-size:.88rem;color:var(--muted);margin-top:4px}
+
+.lista{display:grid;gap:8px}
+.riga{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;display:flex;flex-wrap:wrap;gap:4px 14px;align-items:center}
+.riga.off{opacity:.5}
+.riga b{font:700 1.05rem var(--fc);min-width:8em}
+.riga .info{color:var(--muted);font-size:.9rem;flex:1}
+.stelle{color:var(--yellow);letter-spacing:1px}
+.tag{font-size:.75rem;font-weight:600;border:1px solid var(--line);border-radius:4px;padding:0 6px;color:var(--muted)}
+
+.vuoto{background:var(--card);border:1px dashed var(--line);border-radius:10px;padding:28px;text-align:center;color:var(--muted)}
+
+.griglia{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:10px}
+.griglia table{border-collapse:collapse;font-size:.82rem}
+.griglia th,.griglia td{border-bottom:1px solid var(--line);padding:4px;text-align:center}
+.griglia th{font-weight:600;color:var(--muted);white-space:nowrap}
+.griglia th.ev{color:var(--water)}
+.griglia th.ev::after{content:'';display:block;height:3px;background:var(--water);border-radius:2px;margin-top:2px}
+.griglia .nome{position:sticky;left:0;background:var(--card);text-align:left;font-weight:600;padding:4px 10px;white-space:nowrap;z-index:1}
+.fx{display:flex;gap:2px;justify-content:center}
+.fx button{width:22px;height:22px;border:1px solid var(--line);border-radius:4px;background:#fff;font:700 .7rem var(--fc);color:#9DB3BB;padding:0}
+.fx button.si{background:var(--ok);border-color:var(--ok);color:#fff}
+
+dialog{border:0;border-radius:14px;padding:0;width:min(560px,94vw);max-height:90vh;color:var(--ink)}
+dialog::backdrop{background:rgba(18,48,58,.45)}
+.dlg-h{padding:14px 18px;border-bottom:1px solid var(--line);font:700 1.15rem var(--fc);display:flex;justify-content:space-between;align-items:center}
+.dlg-b{padding:16px 18px;overflow:auto;max-height:calc(90vh - 130px)}
+.dlg-f{padding:12px 18px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px}
+.campo{display:grid;gap:4px;margin-bottom:12px}
+.campo span{font-size:.85rem;font-weight:600;color:var(--muted)}
+.campo input,.campo select,.campo textarea{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:#fff;width:100%}
+.due{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.spunta{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-weight:500}
+.spunta input{width:18px;height:18px}
+
+.cand{display:grid;grid-template-columns:1fr auto;gap:4px 10px;padding:10px 0;border-bottom:1px solid var(--line);align-items:center}
+.cand .n{font-weight:600}
+.cand .d{grid-column:1;font-size:.84rem;color:var(--muted)}
+.cand .d .ok{color:var(--ok);font-weight:600}
+.cand .d .ko{color:var(--warn);font-weight:600}
+.cand .b{grid-row:1 / span 2;grid-column:2;display:flex;gap:6px}
+
+.login{max-width:360px;margin:12vh auto;background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.login .corpo{padding:22px}
+.login h1{font:700 1.5rem var(--fc);margin:0 0 4px}
+.login p{color:var(--muted);margin:0 0 18px}
+#toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:8px;font-size:.92rem;display:none;z-index:50;max-width:92vw}
+#toast.err{background:var(--red)}
+@media (max-width:560px){ .due{grid-template-columns:1fr} .barra .mese{min-width:auto} }
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<dialog id="dlg"></dialog>
+<div id="toast" role="status"></div>
+
+<script>
+// ===== CONFIGURAZIONE: incolla qui URL e chiave "anon" del progetto Supabase faylive =====
+const SUPABASE_URL = 'https://uqaddhbayyhudbmqixic.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxYWRkaGJheXlodWRibXFpeGljIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxODE5NDAsImV4cCI6MjEwMDc1Nzk0MH0.KNW8Wo6b3l87cZWEUncaFVgnHYS_RVWx0GwX8B1rY50';
+// ========================================================================================
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const RUOLI = { F:'Fotografo', S:'Stampatore', FS:'Foto e stampa' };
+const S = { me:null, tab:'turni', mese:meseOggi(), collab:[], piscine:[], turni:[], ass:[], disp:[] };
+
+// ---------- utilità ----------
+function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function pad(n){ return String(n).padStart(2,'0'); }
+function meseOggi(){ const d=new Date(); return d.getFullYear()+'-'+pad(d.getMonth()+1); }
+function oggi(){ const d=new Date(); return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); }
+function limitiMese(ym){ const [y,m]=ym.split('-').map(Number); const ult=new Date(y,m,0).getDate(); return [ym+'-01', ym+'-'+pad(ult), ult]; }
+function spostaMese(ym,n){ let [y,m]=ym.split('-').map(Number); m+=n; while(m>12){m-=12;y++} while(m<1){m+=12;y--} return y+'-'+pad(m); }
+function nomeMese(ym){ const [y,m]=ym.split('-').map(Number); return new Date(y,m-1,1).toLocaleDateString('it-IT',{month:'long',year:'numeric'}); }
+function nomeGiorno(d){ const [y,m,g]=d.split('-').map(Number); return new Date(y,m-1,g).toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long'}); }
+function hm(t){ return (t||'').slice(0,5); }
+function stelle(n){ return '★'.repeat(n)+'☆'.repeat(5-n); }
+function puntini(n){ return '<span class="imp" title="Importanza '+n+' su 5">'+[1,2,3,4,5].map(i=>'<i class="'+(i<=n?'on':'')+'"></i>').join('')+'</span>'; }
+function toast(msg, err){ const t=document.getElementById('toast'); t.textContent=msg; t.className=err?'err':''; t.style.display='block'; clearTimeout(toast._t); toast._t=setTimeout(()=>t.style.display='none', err?6000:2500); }
+function errore(e){
+  if(!e) return false;
+  let m = e.message || String(e);
+  if(e.code==='23505') m='Esiste già un elemento uguale (stesso nome, oppure stessa piscina, data e ora).';
+  if(e.code==='23503') m='Non si può eliminare: è usato in qualche turno. Puoi disattivarlo invece.';
+  toast(m,true); return true;
+}
+const collabById = id => S.collab.find(c=>c.id===id);
+const piscinaById = id => S.piscine.find(p=>p.id===id);
+
+// fasce richieste da un turno: mattina se inizia prima delle 13, pomeriggio se finisce dopo le 13
+function fasceTurno(t){ const f=[]; if(hm(t.ora_inizio)<'13:00') f.push('M'); if(hm(t.ora_fine)>'13:00') f.push('P'); return f; }
+
+// ---------- accesso ----------
+async function avvio(){
+  if(SUPABASE_URL.startsWith('INCOLLA')){ document.getElementById('app').innerHTML='<div class="login"><div class="corsia"></div><div class="corpo"><h1>Configurazione mancante</h1><p>Inserisci URL e chiave anon di Supabase in cima al file index.html.</p></div></div>'; return; }
+  const { data:{ session } } = await sb.auth.getSession();
+  if(session) dopoLogin(session.user); else schermataLogin();
+}
+
+function schermataLogin(msg){
+  document.getElementById('app').innerHTML = `
+  <div class="login"><div class="corsia"></div><div class="corpo">
+    <h1>Turni piscine</h1><p>Frame About You</p>
+    <form id="fl">
+      <label class="campo"><span>Email</span><input name="email" type="email" autocomplete="username" required></label>
+      <label class="campo"><span>Password</span><input name="pw" type="password" autocomplete="current-password" required></label>
+      <button class="btn pri" style="width:100%">Entra</button>
+    </form>
+    ${msg?'<p style="color:var(--red);margin-top:12px">'+esc(msg)+'</p>':''}
+  </div></div>`;
+  document.getElementById('fl').onsubmit = async ev => {
+    ev.preventDefault(); const f=ev.target;
+    const { data, error } = await sb.auth.signInWithPassword({ email:f.email.value.trim(), password:f.pw.value });
+    if(error) return schermataLogin('Email o password non corrette.');
+    dopoLogin(data.user);
+  };
+}
+
+async function esci(){ await sb.auth.signOut(); S.me=null; schermataLogin(); }
+
+async function dopoLogin(user){
+  const { data, error } = await sb.from('tp_collaboratori').select('*');
+  if(errore(error)) return;
+  S.me = (data||[]).find(c => (c.email||'').toLowerCase() === (user.email||'').toLowerCase() && c.attivo);
+  if(!S.me){
+    document.getElementById('app').innerHTML='<div class="login"><div class="corsia"></div><div class="corpo"><h1>Account non collegato</h1><p>Questa email non risulta tra i collaboratori attivi. Chiedi agli organizzatori di inserirla nella tua scheda.</p><button class="btn" onclick="esci()">Esci</button></div></div>';
+    return;
+  }
+  if(!S.me.organizzatore){
+    document.getElementById('app').innerHTML='<div class="login"><div class="corsia"></div><div class="corpo"><h1>Ciao '+esc(S.me.nome)+'</h1><p>L\'area collaboratori (disponibilità, turni e incassi) è in preparazione.</p><button class="btn" onclick="esci()">Esci</button></div></div>';
+    return;
+  }
+  S.collab = data;
+  await caricaTutto();
+}
+
+// ---------- dati ----------
+async function caricaAnagrafiche(){
+  const [c,p] = await Promise.all([
+    sb.from('tp_collaboratori').select('*').order('nome'),
+    sb.from('tp_piscine').select('*').order('nome')
+  ]);
+  if(errore(c.error)||errore(p.error)) return;
+  S.collab=c.data; S.piscine=p.data;
+}
+async function caricaMese(){
+  const [da,a] = limitiMese(S.mese);
+  const [t,d] = await Promise.all([
+    sb.from('tp_turni').select('*').gte('data',da).lte('data',a).order('data').order('ora_inizio'),
+    sb.from('tp_disponibilita').select('*').gte('data',da).lte('data',a)
+  ]);
+  if(errore(t.error)||errore(d.error)) return;
+  S.turni=t.data; S.disp=d.data; S.ass=[];
+  if(S.turni.length){
+    const r = await sb.from('tp_assegnazioni').select('*').in('turno_id', S.turni.map(x=>x.id));
+    if(errore(r.error)) return; S.ass=r.data;
+  }
+}
+async function caricaTutto(){ await caricaAnagrafiche(); await caricaMese(); disegna(); }
+async function ricarica(){ await caricaMese(); disegna(); }
+
+// ---------- struttura ----------
+function disegna(){
+  const tabs=[['turni','Turni'],['disponibilita','Disponibilità'],['collaboratori','Collaboratori'],['piscine','Piscine']];
+  document.getElementById('app').innerHTML = `
+  <header>
+    <div class="top"><h1>Turni piscine</h1><span class="chi">${esc(S.me.nome)}</span><button onclick="esci()">Esci</button></div>
+    <nav>${tabs.map(([k,l])=>`<button aria-current="${S.tab===k}" onclick="vai('${k}')">${l}</button>`).join('')}</nav>
+    <div class="corsia"></div>
+  </header>
+  <main id="main"></main>`;
+  ({turni:vistaTurni, disponibilita:vistaDisp, collaboratori:vistaCollab, piscine:vistaPiscine})[S.tab]();
+}
+function vai(k){ S.tab=k; disegna(); }
+async function cambiaMese(n){ S.mese=spostaMese(S.mese,n); await ricarica(); }
+function barraMese(extra){
+  return `<div class="barra"><button class="btn pic" onclick="cambiaMese(-1)" aria-label="Mese precedente">‹</button><span class="mese">${nomeMese(S.mese)}</span><button class="btn pic" onclick="cambiaMese(1)" aria-label="Mese successivo">›</button><span class="spazio"></span>${extra||''}</div>`;
+}
+
+// ---------- TURNI ----------
+function analisiTurno(t){
+  const ass = S.ass.filter(a=>a.turno_id===t.id);
+  const nF = ass.filter(a=>a.ruolo==='F').length, nS = ass.filter(a=>a.ruolo==='S').length;
+  const avvisi=[];
+  if(ass.length && !ass.some(a=>collabById(a.collaboratore_id)?.auto)) avvisi.push('Nessuno della squadra ha la macchina');
+  ass.forEach(a=>{
+    const c=collabById(a.collaboratore_id); if(!c) return;
+    const st=statoPersona(c,t);
+    if(st.conflitto) avvisi.push(c.nome+' è in un altro turno alla stessa ora');
+    else if(st.disp===false) avvisi.push(c.nome+' non ha dato disponibilità per questo orario');
+  });
+  return { ass, nF, nS, avvisi };
+}
+
+function vistaTurni(){
+  const m=document.getElementById('main');
+  const bozze=S.turni.filter(t=>!t.pubblicato).length;
+  let h = barraMese(`<button class="btn" ${bozze?'':'disabled'} onclick="pubblicaMese()">Pubblica ${bozze||''} turni in bozza</button><button class="btn pri" onclick="formTurno()">Nuovo turno</button>`);
+  if(!S.piscine.some(p=>p.attiva)) h+='<div class="vuoto">Prima inserisci le piscine nella scheda Piscine, poi potrai creare i turni.</div>';
+  else if(!S.turni.length) h+='<div class="vuoto">Nessun turno in questo mese. Crea il primo con “Nuovo turno”.</div>';
+  else{
+    const giorni=[...new Set(S.turni.map(t=>t.data))];
+    giorni.forEach(g=>{
+      const tg=S.turni.filter(t=>t.data===g);
+      h+=`<div class="giorno">${nomeGiorno(g)} <small>${tg.length} ${tg.length===1?'turno':'turni'}</small></div>`;
+      tg.forEach(t=>{
+        const p=piscinaById(t.piscina_id)||{nome:'?',importanza:1};
+        const a=analisiTurno(t);
+        const cls=(n,r)=> n>=r ? 'pieno' : 'manca';
+        h+=`<div class="turno ${t.pubblicato?'':'bozza'}">
+          <div class="t-head"><b>${esc(p.nome)}</b>${puntini(p.importanza)}<span class="t-ora">${hm(t.ora_inizio)}–${hm(t.ora_fine)}</span><span class="stato ${t.pubblicato?'':'bozza'}">${t.pubblicato?'Pubblicato':'Bozza'}</span></div>
+          <div class="req"><span class="${cls(a.nF,t.fotografi)}">Fotografi ${a.nF}/${t.fotografi}</span><span class="${cls(a.nS,t.stampatori)}">Stampatori ${a.nS}/${t.stampatori}</span></div>
+          <div class="chips">${a.ass.map(x=>{const c=collabById(x.collaboratore_id)||{nome:'?'};return `<span class="chip"><span class="r ${x.ruolo}">${x.ruolo==='F'?'FOTO':'STAMPA'}</span>${esc(c.nome)}${c.auto?' 🚗':''}<button title="Togli ${esc(c.nome)}" onclick="togli('${x.id}')">×</button></span>`}).join('')}</div>
+          ${t.note?`<div class="note">${esc(t.note)}</div>`:''}
+          ${a.avvisi.length?`<ul class="avvisi">${a.avvisi.map(v=>'<li>⚠ '+esc(v)+'</li>').join('')}</ul>`:''}
+          <div class="azioni">
+            <button class="btn pic pri" onclick="formAssegna('${t.id}')">Assegna persone</button>
+            <button class="btn pic" onclick="pubblica('${t.id}',${!t.pubblicato})">${t.pubblicato?'Rimetti in bozza':'Pubblica'}</button>
+            <button class="btn pic" onclick="formTurno('${t.id}')">Modifica</button>
+            <button class="btn pic del" onclick="eliminaTurno('${t.id}')">Elimina</button>
+          </div></div>`;
+      });
+    });
+  }
+  m.innerHTML=h;
+}
+
+function formTurno(id){
+  const t = id ? S.turni.find(x=>x.id===id) : null;
+  const [da,a]=limitiMese(S.mese); const o=oggi();
+  const dataDef = t ? t.data : (o>=da&&o<=a ? o : da);
+  const opz = S.piscine.filter(p=>p.attiva || (t&&p.id===t.piscina_id)).map(p=>`<option value="${p.id}" ${t&&t.piscina_id===p.id?'selected':''}>${esc(p.nome)}</option>`).join('');
+  apriDialog(t?'Modifica turno':'Nuovo turno', `
+    <label class="campo"><span>Piscina</span><select name="piscina_id" required>${opz}</select></label>
+    <label class="campo"><span>Data</span><input type="date" name="data" value="${dataDef}" required></label>
+    <div class="due">
+      <label class="campo"><span>Inizio</span><input type="time" name="ora_inizio" value="${t?hm(t.ora_inizio):'09:00'}" required></label>
+      <label class="campo"><span>Fine</span><input type="time" name="ora_fine" value="${t?hm(t.ora_fine):'13:00'}" required></label>
+      <label class="campo"><span>Fotografi richiesti</span><input type="number" min="0" max="9" name="fotografi" value="${t?t.fotografi:1}" required></label>
+      <label class="campo"><span>Stampatori richiesti</span><input type="number" min="0" max="9" name="stampatori" value="${t?t.stampatori:1}" required></label>
+    </div>
+    <label class="campo"><span>Note</span><textarea name="note" rows="2">${esc(t?.note)}</textarea></label>`,
+  async f=>{
+    const rec={ piscina_id:f.piscina_id.value, data:f.data.value, ora_inizio:f.ora_inizio.value, ora_fine:f.ora_fine.value,
+      fotografi:+f.fotografi.value, stampatori:+f.stampatori.value, note:f.note.value.trim()||null };
+    if(rec.ora_fine<=rec.ora_inizio){ toast('L\'ora di fine deve essere dopo l\'inizio.',true); return false; }
+    const r = t ? await sb.from('tp_turni').update(rec).eq('id',t.id) : await sb.from('tp_turni').insert(rec);
+    if(errore(r.error)) return false;
+    if(rec.data.slice(0,7)!==S.mese) S.mese=rec.data.slice(0,7);
+    toast(t?'Turno salvato.':'Turno creato.'); await ricarica();
+  }, t?'Salva turno':'Crea turno');
+}
+
+async function eliminaTurno(id){
+  const t=S.turni.find(x=>x.id===id); const p=piscinaById(t.piscina_id);
+  if(!confirm('Eliminare il turno '+p.nome+' del '+nomeGiorno(t.data)+'? Si cancellano anche assegnazioni, incassi e spese collegate.')) return;
+  if(errore((await sb.from('tp_turni').delete().eq('id',id)).error)) return;
+  toast('Turno eliminato.'); ricarica();
+}
+async function pubblica(id,val){ if(errore((await sb.from('tp_turni').update({pubblicato:val}).eq('id',id)).error)) return; toast(val?'Turno pubblicato.':'Turno rimesso in bozza.'); ricarica(); }
+async function pubblicaMese(){
+  const [da,a]=limitiMese(S.mese);
+  if(!confirm('Pubblicare tutti i turni in bozza di '+nomeMese(S.mese)+'? I collaboratori li vedranno.')) return;
+  if(errore((await sb.from('tp_turni').update({pubblicato:true}).gte('data',da).lte('data',a).eq('pubblicato',false)).error)) return;
+  toast('Turni pubblicati.'); ricarica();
+}
+async function togli(assId){ if(errore((await sb.from('tp_assegnazioni').delete().eq('id',assId)).error)) return; ricarica(); }
+
+// stato di una persona rispetto a un turno
+function statoPersona(c,t){
+  const giaQui = S.ass.find(a=>a.turno_id===t.id && a.collaboratore_id===c.id);
+  const altri = S.ass.filter(a=>a.collaboratore_id===c.id && a.turno_id!==t.id).map(a=>S.turni.find(x=>x.id===a.turno_id)).filter(x=>x&&x.data===t.data);
+  const conflitto = altri.some(x=> hm(x.ora_inizio)<hm(t.ora_fine) && hm(t.ora_inizio)<hm(x.ora_fine));
+  const dichiarate = S.disp.filter(d=>d.collaboratore_id===c.id);
+  let disp=null; // null = non ha compilato nulla nel mese
+  if(dichiarate.length){ disp = fasceTurno(t).every(f=>dichiarate.some(d=>d.data===t.data && d.fascia===f)); }
+  const nelMese = S.ass.filter(a=>a.collaboratore_id===c.id).length;
+  return { giaQui, conflitto, disp, nelMese, stessoGiorno:altri.length };
+}
+
+function formAssegna(id){
+  const t=S.turni.find(x=>x.id===id); const p=piscinaById(t.piscina_id);
+  const a=analisiTurno(t);
+  const righe = S.collab.filter(c=>c.attivo).map(c=>({c, st:statoPersona(c,t)}))
+    .sort((x,y)=> (punteggio(y)-punteggio(x)) || (y.c.livello-x.c.livello) || (x.st.nelMese-y.st.nelMese) || x.c.nome.localeCompare(y.c.nome));
+  function punteggio(r){ if(r.st.giaQui) return 4; if(r.st.conflitto) return 0; if(r.st.disp===true) return 3; if(r.st.disp===null) return 2; return 1; }
+  const h = `<p style="margin:0 0 6px"><b>${esc(p.nome)}</b> ${puntini(p.importanza)} · ${nomeGiorno(t.data)}, ${hm(t.ora_inizio)}–${hm(t.ora_fine)}</p>
+  <p class="note" style="margin:0 0 8px">Fotografi ${a.nF}/${t.fotografi}, stampatori ${a.nS}/${t.stampatori}</p>
+  ${righe.map(({c,st})=>{
+    let d;
+    if(st.giaQui) d='<span class="ok">In squadra come '+(st.giaQui.ruolo==='F'?'fotografo':'stampatore')+'</span>';
+    else if(st.conflitto) d='<span class="ko">In un altro turno alla stessa ora</span>';
+    else if(st.disp===true) d='<span class="ok">Disponibile</span>';
+    else if(st.disp===false) d='<span class="ko">Non disponibile</span>';
+    else d='Disponibilità non indicata';
+    const info=[RUOLI[c.ruolo], '<span class="stelle">'+stelle(c.livello)+'</span>', c.auto?'🚗 macchina':'senza macchina', st.nelMese+' turni nel mese'].join(', ');
+    const b = st.giaQui ? `<button class="btn pic del" onclick="togliDaDialog('${st.giaQui.id}','${t.id}')">Togli</button>`
+      : (c.ruolo!=='S'?`<button class="btn pic" onclick="assegna('${t.id}','${c.id}','F')">Foto</button>`:'')
+      + (c.ruolo!=='F'?`<button class="btn pic" onclick="assegna('${t.id}','${c.id}','S')">Stampa</button>`:'');
+    return `<div class="cand"><span class="n">${esc(c.nome)}</span><span class="b">${b}</span><span class="d">${d}<br>${info}</span></div>`;
+  }).join('') || '<div class="vuoto">Nessun collaboratore attivo.</div>'}`;
+  apriDialog('Assegna persone', h, null, null, 'Fatto');
+}
+async function assegna(tid,cid,ruolo){
+  if(errore((await sb.from('tp_assegnazioni').insert({turno_id:tid, collaboratore_id:cid, ruolo})).error)) return;
+  await caricaMese(); vistaTurni(); formAssegna(tid);
+}
+async function togliDaDialog(aid,tid){
+  if(errore((await sb.from('tp_assegnazioni').delete().eq('id',aid)).error)) return;
+  await caricaMese(); vistaTurni(); formAssegna(tid);
+}
+
+// ---------- DISPONIBILITÀ ----------
+function vistaDisp(){
+  const m=document.getElementById('main');
+  const [,,ult]=limitiMese(S.mese);
+  const attivi=S.collab.filter(c=>c.attivo);
+  const conTurni=new Set(S.turni.map(t=>t.data));
+  let h=barraMese('<span class="note">Di solito la compilano i collaboratori; qui potete correggerla voi.</span>');
+  if(!attivi.length){ m.innerHTML=h+'<div class="vuoto">Nessun collaboratore attivo.</div>'; return; }
+  const giorni=[]; for(let g=1; g<=ult; g++) giorni.push(S.mese+'-'+pad(g));
+  h+='<div class="griglia"><table><thead><tr><th class="nome">Collaboratore</th>'+giorni.map(d=>{
+    const [y,mm,g]=d.split('-').map(Number); const wd=new Date(y,mm-1,g).toLocaleDateString('it-IT',{weekday:'short'});
+    return `<th class="${conTurni.has(d)?'ev':''}" title="${conTurni.has(d)?'Ci sono turni':''}">${wd}<br>${g}</th>`;
+  }).join('')+'</tr></thead><tbody>';
+  attivi.forEach(c=>{
+    h+=`<tr><td class="nome">${esc(c.nome)}</td>`+giorni.map(d=>{
+      const s=f=>S.disp.some(x=>x.collaboratore_id===c.id&&x.data===d&&x.fascia===f);
+      return `<td><div class="fx"><button class="${s('M')?'si':''}" title="Mattina" onclick="toggleDisp('${c.id}','${d}','M')">M</button><button class="${s('P')?'si':''}" title="Pomeriggio" onclick="toggleDisp('${c.id}','${d}','P')">P</button></div></td>`;
+    }).join('')+'</tr>';
+  });
+  m.innerHTML=h+'</tbody></table></div>';
+}
+async function toggleDisp(cid,data,fascia){
+  const c=S.disp.find(x=>x.collaboratore_id===cid&&x.data===data&&x.fascia===fascia);
+  const r = c ? await sb.from('tp_disponibilita').delete().match({collaboratore_id:cid,data,fascia})
+              : await sb.from('tp_disponibilita').insert({collaboratore_id:cid,data,fascia});
+  if(errore(r.error)) return;
+  if(c) S.disp=S.disp.filter(x=>x!==c); else S.disp.push({collaboratore_id:cid,data,fascia});
+  const sx=document.querySelector('.griglia')?.scrollLeft; vistaDisp(); const g=document.querySelector('.griglia'); if(g) g.scrollLeft=sx||0;
+}
+
+// ---------- COLLABORATORI ----------
+function vistaCollab(){
+  const m=document.getElementById('main');
+  let h='<div class="barra"><span class="spazio"></span><button class="btn pri" onclick="formCollab()">Nuovo collaboratore</button></div>';
+  if(!S.collab.length) h+='<div class="vuoto">Nessun collaboratore. Aggiungi il primo.</div>';
+  h+='<div class="lista">'+S.collab.map(c=>`<div class="riga ${c.attivo?'':'off'}">
+    <b>${esc(c.nome)}</b>
+    <span class="tag">${RUOLI[c.ruolo]}</span>
+    <span class="stelle" title="Livello ${c.livello}">${stelle(c.livello)}</span>
+    ${c.auto?'<span title="Ha la macchina">🚗</span>':''}
+    ${c.organizzatore?'<span class="tag">organizzatore</span>':''}
+    ${c.attivo?'':'<span class="tag">non attivo</span>'}
+    <span class="info">${[c.telefono,c.email].filter(Boolean).map(esc).join(', ')}</span>
+    <button class="btn pic" onclick="formCollab('${c.id}')">Modifica</button></div>`).join('')+'</div>';
+  m.innerHTML=h;
+}
+function formCollab(id){
+  const c = id ? collabById(id) : null;
+  apriDialog(c?'Modifica collaboratore':'Nuovo collaboratore', `
+    <label class="campo"><span>Nome</span><input name="nome" value="${esc(c?.nome)}" required></label>
+    <div class="due">
+      <label class="campo"><span>Ruolo</span><select name="ruolo">${Object.entries(RUOLI).map(([k,l])=>`<option value="${k}" ${c?.ruolo===k?'selected':''}>${l}</option>`).join('')}</select></label>
+      <label class="campo"><span>Livello (1–5)</span><select name="livello">${[1,2,3,4,5].map(n=>`<option ${ (c?c.livello:3)===n?'selected':''}>${n}</option>`).join('')}</select></label>
+      <label class="campo"><span>Telefono</span><input name="telefono" type="tel" value="${esc(c?.telefono)}"></label>
+      <label class="campo"><span>Email di accesso</span><input name="email" type="email" value="${esc(c?.email)}"></label>
+    </div>
+    <label class="campo"><span>Indirizzo</span><input name="indirizzo" value="${esc(c?.indirizzo)}"></label>
+    <label class="campo"><span>Note</span><textarea name="note" rows="2">${esc(c?.note)}</textarea></label>
+    <label class="spunta"><input type="checkbox" name="auto" ${c?.auto?'checked':''}> Ha la macchina</label>
+    <label class="spunta"><input type="checkbox" name="organizzatore" ${c?.organizzatore?'checked':''}> Organizzatore (vede e modifica tutto)</label>
+    <label class="spunta"><input type="checkbox" name="attivo" ${!c||c.attivo?'checked':''}> Attivo</label>
+    ${c?`<button type="button" class="btn pic del" onclick="eliminaCollab('${c.id}')">Elimina collaboratore</button>`:''}`,
+  async f=>{
+    const rec={ nome:f.nome.value.trim(), ruolo:f.ruolo.value, livello:+f.livello.value, telefono:f.telefono.value.trim()||null,
+      email:f.email.value.trim().toLowerCase()||null, indirizzo:f.indirizzo.value.trim()||null, note:f.note.value.trim()||null,
+      auto:f.auto.checked, organizzatore:f.organizzatore.checked, attivo:f.attivo.checked };
+    if(c && c.id===S.me.id && (!rec.organizzatore || !rec.attivo)){ toast('Non puoi togliere a te stesso il ruolo di organizzatore.',true); return false; }
+    const r = c ? await sb.from('tp_collaboratori').update(rec).eq('id',c.id) : await sb.from('tp_collaboratori').insert(rec);
+    if(errore(r.error)) return false;
+    toast('Collaboratore salvato.'); await caricaTutto();
+  }, 'Salva');
+}
+async function eliminaCollab(id){
+  const c=collabById(id); if(c.id===S.me.id){ toast('Non puoi eliminare te stesso.',true); return; }
+  if(!confirm('Eliminare '+c.nome+'? Se ha già lavorato in qualche turno non si può: in quel caso togli la spunta “Attivo”.')) return;
+  if(errore((await sb.from('tp_collaboratori').delete().eq('id',id)).error)) return;
+  chiudiDialog(); toast('Collaboratore eliminato.'); caricaTutto();
+}
+
+// ---------- PISCINE ----------
+function vistaPiscine(){
+  const m=document.getElementById('main');
+  let h='<div class="barra"><span class="spazio"></span><button class="btn pri" onclick="formPiscina()">Nuova piscina</button></div>';
+  if(!S.piscine.length) h+='<div class="vuoto">Nessuna piscina. Aggiungi la prima.</div>';
+  h+='<div class="lista">'+S.piscine.map(p=>`<div class="riga ${p.attiva?'':'off'}">
+    <b>${esc(p.nome)}</b>${puntini(p.importanza)}
+    ${p.attiva?'':'<span class="tag">non attiva</span>'}
+    <span class="info">${[p.indirizzo,p.contatto].filter(Boolean).map(esc).join(', ')}</span>
+    <button class="btn pic" onclick="formPiscina('${p.id}')">Modifica</button></div>`).join('')+'</div>';
+  m.innerHTML=h;
+}
+function formPiscina(id){
+  const p = id ? piscinaById(id) : null;
+  apriDialog(p?'Modifica piscina':'Nuova piscina', `
+    <label class="campo"><span>Nome</span><input name="nome" value="${esc(p?.nome)}" required></label>
+    <label class="campo"><span>Importanza (1–5)</span><select name="importanza">${[1,2,3,4,5].map(n=>`<option ${(p?p.importanza:3)===n?'selected':''}>${n}</option>`).join('')}</select></label>
+    <label class="campo"><span>Indirizzo</span><input name="indirizzo" value="${esc(p?.indirizzo)}"></label>
+    <label class="campo"><span>Referente e contatto</span><input name="contatto" value="${esc(p?.contatto)}"></label>
+    <label class="campo"><span>Note</span><textarea name="note" rows="2">${esc(p?.note)}</textarea></label>
+    <label class="spunta"><input type="checkbox" name="attiva" ${!p||p.attiva?'checked':''}> Attiva</label>
+    ${p?`<button type="button" class="btn pic del" onclick="eliminaPiscina('${p.id}')">Elimina piscina</button>`:''}`,
+  async f=>{
+    const rec={ nome:f.nome.value.trim().replace(/\s+/g,' '), importanza:+f.importanza.value, indirizzo:f.indirizzo.value.trim()||null,
+      contatto:f.contatto.value.trim()||null, note:f.note.value.trim()||null, attiva:f.attiva.checked };
+    const r = p ? await sb.from('tp_piscine').update(rec).eq('id',p.id) : await sb.from('tp_piscine').insert(rec);
+    if(errore(r.error)) return false;
+    toast('Piscina salvata.'); await caricaTutto();
+  }, 'Salva');
+}
+async function eliminaPiscina(id){
+  const p=piscinaById(id);
+  if(!confirm('Eliminare '+p.nome+'? Se ha già dei turni non si può: in quel caso togli la spunta “Attiva”.')) return;
+  if(errore((await sb.from('tp_piscine').delete().eq('id',id)).error)) return;
+  chiudiDialog(); toast('Piscina eliminata.'); caricaTutto();
+}
+
+// ---------- finestra di dialogo ----------
+function apriDialog(titolo, corpo, onSave, etichetta, chiudiTesto){
+  const d=document.getElementById('dlg');
+  d.innerHTML = `<form method="dialog" id="df">
+    <div class="dlg-h">${esc(titolo)}<button type="button" class="btn pic" onclick="chiudiDialog()" aria-label="Chiudi">×</button></div>
+    <div class="dlg-b">${corpo}</div>
+    <div class="dlg-f"><button type="button" class="btn" onclick="chiudiDialog()">${onSave?'Annulla':(chiudiTesto||'Chiudi')}</button>${onSave?`<button class="btn pri">${esc(etichetta||'Salva')}</button>`:''}</div></form>`;
+  const f=document.getElementById('df');
+  f.onsubmit = async ev => {
+    ev.preventDefault(); if(!onSave) return chiudiDialog();
+    const bt=f.querySelector('.dlg-f .pri'); bt.disabled=true;
+    const ok = await onSave(f); bt.disabled=false;
+    if(ok!==false) chiudiDialog();
+  };
+  if(!d.open) d.showModal();
+}
+function chiudiDialog(){ const d=document.getElementById('dlg'); if(d.open) d.close(); }
+
+avvio();
+</script>
+</body>
+</html>
