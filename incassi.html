@@ -29,6 +29,14 @@ main{max-width:520px;margin:0 auto;padding:16px}
 input{border:1px solid var(--line);border-radius:8px;padding:10px;background:#fff;width:100%}
 input.euro{text-align:right;font-variant-numeric:tabular-nums}
 .spesa{display:grid;grid-template-columns:1fr 7em auto;gap:8px;margin-bottom:8px}
+.comp{border-top:1px solid var(--line);padding:10px 0 2px}
+.comp:first-of-type{border-top:0;padding-top:0}
+.comp .riga1{display:grid;grid-template-columns:1fr 7em;gap:8px;align-items:center;margin-bottom:6px}
+.comp b{font-weight:600}
+.tag{display:inline-block;font:700 .7rem var(--fc);color:#fff;background:var(--water);border-radius:4px;padding:0 5px;margin-right:6px;vertical-align:middle}
+.tag.S{background:var(--red)}
+.riep div{display:flex;justify-content:space-between;font-variant-numeric:tabular-nums;padding:2px 0}
+.riep .netto{border-top:2px solid var(--ink);margin-top:6px;padding-top:6px;font-weight:700;font-size:1.1rem}
 .btn{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:9px 14px;font-weight:600}
 .btn.pri{background:var(--water);border-color:var(--water);color:#fff;width:100%;padding:13px;font-size:1.05rem}
 .btn.x{color:var(--red);padding:9px 12px}
@@ -80,9 +88,23 @@ function disegna(){
       <div class="tot"><span>Totale incasso</span><span id="tot"></span></div>
     </div>
     <div class="box"><h2>Uscite</h2>
-      <label class="campo"><span>% piscina</span><input class="euro" id="perc" inputmode="decimal" placeholder="0,00" value="${mostra(i.percentuale_piscina)}"></label>
-      <div id="spese"></div>
+      <label class="campo"><span>% piscina</span><input class="euro" id="perc" inputmode="decimal" placeholder="0,00" value="${mostra(i.percentuale_piscina)}" oninput="totale()"></label>
+      <div id="spese" oninput="totale()"></div>
       <button class="btn" onclick="aggiungiSpesa()">+ Aggiungi spesa (bar o altro)</button>
+    </div>
+    <div class="box"><h2>Compensi</h2>
+      ${(D.squadra||[]).map(x=>`<div class="comp" data-id="${x.assegnazione_id}">
+        <div class="riga1"><span><span class="tag ${x.ruolo}">${x.ruolo==='F'?'FOTO':'STAMPA'}</span><b>${esc(x.nome)}</b></span>
+        <input class="euro ci" inputmode="decimal" placeholder="0,00" value="${mostra(x.importo)}" oninput="totale()" aria-label="Compenso ${esc(x.nome)}"></div>
+        <input class="cn" placeholder="Nota (es. macchina, trasferta, riporta attrezzatura)" value="${esc(x.nota||'')}">
+      </div>`).join('') || '<p class="nota" style="margin:0">Nessuna persona assegnata a questo turno.</p>'}
+    </div>
+    <div class="box riep"><h2>Riepilogo</h2>
+      <div><span>Incasso</span><span id="r-inc"></span></div>
+      <div><span>% piscina</span><span id="r-perc"></span></div>
+      <div><span>Spese</span><span id="r-spese"></span></div>
+      <div><span>Compensi</span><span id="r-comp"></span></div>
+      <div class="netto"><span>Resta</span><span id="r-netto"></span></div>
     </div>
     <button class="btn pri" id="salva" onclick="salva()">Salva</button>
     <p class="nota">${i.aggiornato_il?'Ultimo salvataggio: '+new Date(i.aggiornato_il).toLocaleString('it-IT',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})+'. ':''}Puoi correggere e salvare di nuovo fino al ${scade}. Scrivi solo i numeri, per esempio 120 o 12,50.</p>
@@ -93,13 +115,20 @@ function disegna(){
 }
 function aggiungiSpesa(desc,imp){
   const r=document.createElement('div'); r.className='spesa';
-  r.innerHTML=`<input class="sd" placeholder="Descrizione (es. bar)" value="${esc(desc||'')}"><input class="si euro" inputmode="decimal" placeholder="0,00" value="${esc(imp||'')}"><button class="btn x" aria-label="Togli spesa" onclick="this.parentNode.remove()">×</button>`;
+  r.innerHTML=`<input class="sd" placeholder="Descrizione (es. bar)" value="${esc(desc||'')}"><input class="si euro" inputmode="decimal" placeholder="0,00" value="${esc(imp||'')}"><button class="btn x" aria-label="Togli spesa" onclick="this.parentNode.remove();totale()">×</button>`;
   document.getElementById('spese').appendChild(r);
   if(desc===undefined) r.querySelector('.sd').focus();
 }
+function v0(x){ const n=num(x); return (n==null||isNaN(n)) ? 0 : n; }
 function totale(){
   const c=num(document.getElementById('cash').value)||0, p=num(document.getElementById('pos').value)||0;
   document.getElementById('tot').textContent = (isNaN(c)||isNaN(p)) ? '—' : eur(c+p);
+  const inc=v0(document.getElementById('cash').value)+v0(document.getElementById('pos').value);
+  const perc=v0(document.getElementById('perc').value);
+  const spese=[...document.querySelectorAll('#spese .si')].reduce((a,e)=>a+v0(e.value),0);
+  const comp=[...document.querySelectorAll('.comp .ci')].reduce((a,e)=>a+v0(e.value),0);
+  const set=(id,v)=>{ const e=document.getElementById(id); if(e) e.textContent=v; };
+  set('r-inc',eur(inc)); set('r-perc','− '+eur(perc)); set('r-spese','− '+eur(spese)); set('r-comp','− '+eur(comp)); set('r-netto',eur(inc-perc-spese-comp));
 }
 async function salva(){
   const cash=num(document.getElementById('cash').value), pos=num(document.getElementById('pos').value), perc=num(document.getElementById('perc').value);
@@ -112,8 +141,14 @@ async function salva(){
     if(v==null || Number.isNaN(v)) return toast('Controlla l\'importo della spesa "'+d+'".',true);
     spese.push({ descrizione:d, importo:v });
   }
+  const compensi=[];
+  for(const r of document.querySelectorAll('.comp')){
+    const v=num(r.querySelector('.ci').value), n=r.querySelector('.cn').value.trim();
+    if(Number.isNaN(v)) return toast('Controlla il compenso di '+r.querySelector('b').textContent+'.',true);
+    compensi.push({ assegnazione_id:r.dataset.id, importo:v, nota:n });
+  }
   const b=document.getElementById('salva'); b.disabled=true; b.textContent='Salvataggio…';
-  const { error } = await sb.rpc('tp_inc_salva', { p_codice:codice, p_cash:cash, p_pos:pos, p_perc:perc, p_spese:spese });
+  const { error } = await sb.rpc('tp_inc_salva', { p_codice:codice, p_cash:cash, p_pos:pos, p_perc:perc, p_spese:spese, p_compensi:compensi });
   b.disabled=false; b.textContent='Salva';
   if(error) return toast(/scaduto/i.test(error.message)?'Link scaduto: rivolgiti agli organizzatori.':(error.message||'Non salvato, riprova.'),true);
   toast('Salvato ✓');

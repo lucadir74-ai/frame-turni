@@ -220,7 +220,7 @@ async function caricaMese(){
     sb.from('tp_disponibilita').select('*').gte('data',da).lte('data',a)
   ]);
   if(errore(t.error)||errore(d.error)) return;
-  S.turni=t.data; S.disp=d.data; S.ass=[]; S.incassi=[]; S.spese=[];
+  S.turni=t.data; S.disp=d.data; S.ass=[]; S.incassi=[]; S.spese=[]; S.compensi=[];
   if(S.turni.length){
     const ids=S.turni.map(x=>x.id);
     const [r,i,sp] = await Promise.all([
@@ -229,7 +229,11 @@ async function caricaMese(){
       sb.from('tp_spese').select('*').in('turno_id', ids)
     ]);
     if(errore(r.error)||errore(i.error)||errore(sp.error)) return;
-    S.ass=r.data; S.incassi=i.data; S.spese=sp.data;
+    S.ass=r.data; S.incassi=i.data; S.spese=sp.data; S.compensi=[];
+    if(S.ass.length){
+      const k = await sb.from('tp_compensi').select('*').in('assegnazione_id', S.ass.map(x=>x.id));
+      if(errore(k.error)) return; S.compensi=k.data;
+    }
   }
 }
 async function caricaTutto(){ await caricaAnagrafiche(); await caricaMese(); disegna(); }
@@ -293,6 +297,7 @@ function vistaTurni(){
           <div class="azioni">
             <button class="btn pic pri" onclick="formAssegna('${t.id}')">Assegna persone</button>
             <button class="btn pic" ${a.nS?'':'disabled title="Assegna prima lo stampatore"'} onclick="formLinkIncassi('${t.id}')">Link incassi</button>
+            <button class="btn pic" ${a.ass.length?'':'disabled'} onclick="formCompensi('${t.id}')">Compensi</button>
             <button class="btn pic" onclick="pubblica('${t.id}',${!t.pubblicato})">${t.pubblicato?'Rimetti in bozza':'Pubblica'}</button>
             <button class="btn pic" onclick="formTurno('${t.id}')">Modifica</button>
             <button class="btn pic del" onclick="eliminaTurno('${t.id}')">Elimina</button>
@@ -390,14 +395,50 @@ async function togliDaDialog(aid,tid){
 
 // ---------- INCASSI E LINK ----------
 function eur(n){ return (Number(n)||0).toLocaleString('it-IT',{style:'currency',currency:'EUR'}); }
+function compensiTurno(t){
+  return S.ass.filter(a=>a.turno_id===t.id).map(a=>({a, c:collabById(a.collaboratore_id), k:(S.compensi||[]).find(x=>x.assegnazione_id===a.id)}));
+}
 function rigaIncassi(t){
   const i=(S.incassi||[]).find(x=>x.turno_id===t.id);
   const sp=(S.spese||[]).filter(x=>x.turno_id===t.id);
-  if(!i && !sp.length) return '<div class="note">Incassi non ancora inseriti</div>';
-  const tot=sp.reduce((a,x)=>a+Number(x.importo||0),0);
-  const parti=['Contanti '+eur(i?.cash),'POS '+eur(i?.pos),'% piscina '+eur(i?.percentuale_piscina)];
-  if(sp.length) parti.push('Spese '+eur(tot)+' ('+sp.map(x=>esc(x.descrizione)).join(', ')+')');
-  return '<div class="note" style="color:var(--ink)"><b>Incassi:</b> '+parti.join(', ')+'</div>';
+  const comp=compensiTurno(t).filter(x=>x.k && (x.k.importo!=null || x.k.nota));
+  let h='';
+  if(!i && !sp.length) h+='<div class="note">Incassi non ancora inseriti</div>';
+  else{
+    const tot=sp.reduce((a,x)=>a+Number(x.importo||0),0);
+    const parti=['Contanti '+eur(i?.cash),'POS '+eur(i?.pos),'% piscina '+eur(i?.percentuale_piscina)];
+    if(sp.length) parti.push('Spese '+eur(tot)+' ('+sp.map(x=>esc(x.descrizione)).join(', ')+')');
+    h+='<div class="note" style="color:var(--ink)"><b>Incassi:</b> '+parti.join(', ')+'</div>';
+  }
+  if(comp.length) h+='<div class="note" style="color:var(--ink)"><b>Compensi:</b> '+comp.map(x=>esc(x.c?.nome||'?')+' '+(x.k.importo!=null?eur(x.k.importo):'—')+(x.k.nota?' ('+esc(x.k.nota)+')':'')).join(', ')+'</div>';
+  if(i || sp.length || comp.length){
+    const inc=Number(i?.cash||0)+Number(i?.pos||0);
+    const usc=Number(i?.percentuale_piscina||0)+sp.reduce((a,x)=>a+Number(x.importo||0),0)+comp.reduce((a,x)=>a+Number(x.k.importo||0),0);
+    h+='<div class="note" style="color:var(--ink)"><b>Resta:</b> '+eur(inc-usc)+' <span style="color:var(--muted)">(incasso '+eur(inc)+' meno uscite '+eur(usc)+')</span></div>';
+  }
+  return h;
+}
+function formCompensi(id){
+  const t=S.turni.find(x=>x.id===id); const p=piscinaById(t.piscina_id)||{nome:'?'};
+  const righe=compensiTurno(t);
+  apriDialog('Compensi', `
+    <p style="margin:0 0 12px"><b>${esc(p.nome)}</b>, ${nomeGiorno(t.data)}, ${hm(t.ora_inizio)}–${hm(t.ora_fine)}</p>
+    ${righe.map(({a,c,k})=>`<div class="due" style="align-items:end">
+      <label class="campo"><span>${esc(c?.nome||'?')} (${a.ruolo==='F'?'foto':'stampa'})</span><input name="imp_${a.id}" inputmode="decimal" placeholder="0,00" value="${k?.importo!=null?String(k.importo).replace('.',','):''}"></label>
+      <label class="campo"><span>Nota</span><input name="nota_${a.id}" placeholder="es. macchina, trasferta" value="${esc(k?.nota||'')}"></label>
+    </div>`).join('')}`,
+  async f=>{
+    const daSalvare=[], daTogliere=[];
+    for(const {a} of righe){
+      let v=f['imp_'+a.id].value.trim().replace(/\s|€/g,''); if(v.includes(',')) v=v.replace(/\./g,'').replace(',','.');
+      const imp = v==='' ? null : Number(v); const nota=f['nota_'+a.id].value.trim()||null;
+      if(imp!=null && (isNaN(imp)||imp<0)){ toast('Controlla gli importi.',true); return false; }
+      if(imp==null && !nota) daTogliere.push(a.id); else daSalvare.push({assegnazione_id:a.id, importo:imp, nota, aggiornato_il:new Date().toISOString()});
+    }
+    if(daSalvare.length && errore((await sb.from('tp_compensi').upsert(daSalvare)).error)) return false;
+    if(daTogliere.length && errore((await sb.from('tp_compensi').delete().in('assegnazione_id',daTogliere)).error)) return false;
+    toast('Compensi salvati.'); await ricarica();
+  }, 'Salva compensi');
 }
 function nuovoCodice(){ const a='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'; const r=new Uint32Array(24); crypto.getRandomValues(r); return [...r].map(n=>a[n%a.length]).join(''); }
 function telefonoWa(t){ let d=String(t||'').replace(/\D/g,''); if(d.startsWith('00')) d=d.slice(2); if(d.length===10 && d.startsWith('3')) d='39'+d; return d; }
