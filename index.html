@@ -220,10 +220,16 @@ async function caricaMese(){
     sb.from('tp_disponibilita').select('*').gte('data',da).lte('data',a)
   ]);
   if(errore(t.error)||errore(d.error)) return;
-  S.turni=t.data; S.disp=d.data; S.ass=[];
+  S.turni=t.data; S.disp=d.data; S.ass=[]; S.incassi=[]; S.spese=[];
   if(S.turni.length){
-    const r = await sb.from('tp_assegnazioni').select('*').in('turno_id', S.turni.map(x=>x.id));
-    if(errore(r.error)) return; S.ass=r.data;
+    const ids=S.turni.map(x=>x.id);
+    const [r,i,sp] = await Promise.all([
+      sb.from('tp_assegnazioni').select('*').in('turno_id', ids),
+      sb.from('tp_incassi').select('*').in('turno_id', ids),
+      sb.from('tp_spese').select('*').in('turno_id', ids)
+    ]);
+    if(errore(r.error)||errore(i.error)||errore(sp.error)) return;
+    S.ass=r.data; S.incassi=i.data; S.spese=sp.data;
   }
 }
 async function caricaTutto(){ await caricaAnagrafiche(); await caricaMese(); disegna(); }
@@ -265,7 +271,7 @@ function analisiTurno(t){
 function vistaTurni(){
   const m=document.getElementById('main');
   const bozze=S.turni.filter(t=>!t.pubblicato).length;
-  let h = barraMese(`<button class="btn" ${bozze?'':'disabled'} onclick="formProponi(false)">Proponi turni</button><button class="btn" ${bozze?'':'disabled'} onclick="pubblicaMese()">Pubblica ${bozze||''} turni in bozza</button><button class="btn pri" onclick="formTurno()">Nuovo turno</button>`);
+  let h = barraMese(`<button class="btn" onclick="formLinkCalendario()">Link calendario</button><button class="btn" ${bozze?'':'disabled'} onclick="formProponi(false)">Proponi turni</button><button class="btn" ${bozze?'':'disabled'} onclick="pubblicaMese()">Pubblica ${bozze||''} turni in bozza</button><button class="btn pri" onclick="formTurno()">Nuovo turno</button>`);
   if(!S.piscine.some(p=>p.attiva)) h+='<div class="vuoto">Prima inserisci le piscine nella scheda Piscine, poi potrai creare i turni.</div>';
   else if(!S.turni.length) h+='<div class="vuoto">Nessun turno in questo mese. Crea il primo con “Nuovo turno”.</div>';
   else{
@@ -282,9 +288,11 @@ function vistaTurni(){
           <div class="req"><span class="${cls(a.nF,t.fotografi)}">Fotografi ${a.nF}/${t.fotografi}</span><span class="${cls(a.nS,t.stampatori)}">Stampatori ${a.nS}/${t.stampatori}</span></div>
           <div class="chips">${a.ass.map(x=>{const c=collabById(x.collaboratore_id)||{nome:'?'};return `<span class="chip"><span class="r ${x.ruolo}">${x.ruolo==='F'?'FOTO':'STAMPA'}</span>${esc(c.nome)}${c.auto?' 🚗':''}<button title="Togli ${esc(c.nome)}" onclick="togli('${x.id}')">×</button></span>`}).join('')}</div>
           ${t.note?`<div class="note">${esc(t.note)}</div>`:''}
+          ${rigaIncassi(t)}
           ${a.avvisi.length?`<ul class="avvisi">${a.avvisi.map(v=>'<li>⚠ '+esc(v)+'</li>').join('')}</ul>`:''}
           <div class="azioni">
             <button class="btn pic pri" onclick="formAssegna('${t.id}')">Assegna persone</button>
+            <button class="btn pic" ${a.nS?'':'disabled title="Assegna prima lo stampatore"'} onclick="formLinkIncassi('${t.id}')">Link incassi</button>
             <button class="btn pic" onclick="pubblica('${t.id}',${!t.pubblicato})">${t.pubblicato?'Rimetti in bozza':'Pubblica'}</button>
             <button class="btn pic" onclick="formTurno('${t.id}')">Modifica</button>
             <button class="btn pic del" onclick="eliminaTurno('${t.id}')">Elimina</button>
@@ -378,6 +386,61 @@ async function assegna(tid,cid,ruolo){
 async function togliDaDialog(aid,tid){
   if(errore((await sb.from('tp_assegnazioni').delete().eq('id',aid)).error)) return;
   await caricaMese(); vistaTurni(); formAssegna(tid);
+}
+
+// ---------- INCASSI E LINK ----------
+function eur(n){ return (Number(n)||0).toLocaleString('it-IT',{style:'currency',currency:'EUR'}); }
+function rigaIncassi(t){
+  const i=(S.incassi||[]).find(x=>x.turno_id===t.id);
+  const sp=(S.spese||[]).filter(x=>x.turno_id===t.id);
+  if(!i && !sp.length) return '<div class="note">Incassi non ancora inseriti</div>';
+  const tot=sp.reduce((a,x)=>a+Number(x.importo||0),0);
+  const parti=['Contanti '+eur(i?.cash),'POS '+eur(i?.pos),'% piscina '+eur(i?.percentuale_piscina)];
+  if(sp.length) parti.push('Spese '+eur(tot)+' ('+sp.map(x=>esc(x.descrizione)).join(', ')+')');
+  return '<div class="note" style="color:var(--ink)"><b>Incassi:</b> '+parti.join(', ')+'</div>';
+}
+function nuovoCodice(){ const a='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'; const r=new Uint32Array(24); crypto.getRandomValues(r); return [...r].map(n=>a[n%a.length]).join(''); }
+function telefonoWa(t){ let d=String(t||'').replace(/\D/g,''); if(d.startsWith('00')) d=d.slice(2); if(d.length===10 && d.startsWith('3')) d='39'+d; return d; }
+async function copia(testo){
+  try{ await navigator.clipboard.writeText(testo); toast('Link copiato.'); }
+  catch(e){ prompt('Copia il link:', testo); }
+}
+function linkIncassi(t){ return new URL('incassi.html?k='+t.codice_incassi, location.href).href; }
+function scadenza(t){ const [y,m,g]=t.data.split('-').map(Number); return new Date(y,m-1,g+3).toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long'}); }
+
+async function formLinkIncassi(id, rigenera){
+  let t=S.turni.find(x=>x.id===id); const p=piscinaById(t.piscina_id)||{nome:'?'};
+  if(!t.codice_incassi || rigenera){
+    if(rigenera && !confirm('Il link attuale smetterà di funzionare e dovrai mandare quello nuovo. Procedo?')) return;
+    const codice=nuovoCodice();
+    if(errore((await sb.from('tp_turni').update({codice_incassi:codice}).eq('id',id)).error)) return;
+    await caricaMese(); vistaTurni(); t=S.turni.find(x=>x.id===id);
+  }
+  const url=linkIncassi(t);
+  const stampatori=S.ass.filter(a=>a.turno_id===id && a.ruolo==='S').map(a=>collabById(a.collaboratore_id)).filter(Boolean);
+  const testo = c => 'Ciao '+c.nome+', ecco il link per inserire gli incassi di '+p.nome+' di '+nomeGiorno(t.data)+': '+url;
+  apriDialog('Link incassi', `
+    <p style="margin:0 0 4px"><b>${esc(p.nome)}</b>, ${nomeGiorno(t.data)}, ${hm(t.ora_inizio)}–${hm(t.ora_fine)}</p>
+    <p class="note" style="margin:0 0 12px">Va mandato solo agli stampatori del turno. Funziona fino a ${scadenza(t)} compreso.</p>
+    ${stampatori.map(c=>{const n=telefonoWa(c.telefono);
+      return `<div class="cand"><span class="n">${esc(c.nome)}</span><span class="b">${n?`<a class="btn pic pri" style="text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/${n}?text=${encodeURIComponent(testo(c))}">WhatsApp</a>`:''}</span><span class="d">${n?esc(c.telefono):'Nessun telefono nella scheda: usa “Copia link”'}</span></div>`;}).join('')}
+    <div class="azioni" style="margin-top:14px">
+      <button type="button" class="btn pic" onclick="copia('${url}')">Copia link</button>
+      <button type="button" class="btn pic del" onclick="formLinkIncassi('${id}',true)">Rigenera link</button>
+    </div>`, null, null, 'Chiudi');
+}
+
+function formLinkCalendario(){
+  const url=new URL('calendario.html', location.href).href;
+  const testo='Ciao! Qui trovi le date delle piscine: segna quando sei disponibile e controlla i tuoi turni. '+url;
+  apriDialog('Link calendario', `
+    <p style="margin:0 0 10px">Lo stesso link per tutti i collaboratori. Al primo accesso scelgono il proprio nome e il telefono se lo ricorda.</p>
+    <p class="note" style="word-break:break-all;margin:0 0 12px">${esc(url)}</p>
+    <p class="note" style="margin:0 0 12px">Mostra solo nomi, date, orari e piscine: niente contatti, livelli, importanza o cifre.</p>
+    <div class="azioni">
+      <button type="button" class="btn pic" onclick="copia('${url}')">Copia link</button>
+      <a class="btn pic pri" style="text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(testo)}">Manda su WhatsApp</a>
+    </div>`, null, null, 'Chiudi');
 }
 
 // ---------- PROPOSTA AUTOMATICA ----------

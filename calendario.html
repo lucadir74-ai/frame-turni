@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Frame · Calendario piscine</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<style>
+:root{--tile:#EEF4F5;--card:#fff;--ink:#12303A;--muted:#5B7480;--line:#D3E1E5;--water:#0F6B85;--water-soft:#DCEEF3;--red:#C8333A;--yellow:#E9B824;--ok:#2E7D4F;
+  --f:'Barlow',system-ui,-apple-system,'Segoe UI',sans-serif;--fc:'Barlow Semi Condensed','Barlow',system-ui,sans-serif;
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--tile);color:var(--ink);font:16px/1.45 var(--f)}
+button{font:inherit;cursor:pointer}
+:focus-visible{outline:3px solid var(--yellow);outline-offset:2px}
+header{background:var(--water);color:#fff;position:sticky;top:0;z-index:5}
+.top{max-width:640px;margin:0 auto;padding:12px 16px;display:flex;align-items:center;gap:10px}
+.top h1{font:700 1.25rem var(--fc);margin:0;flex:1}
+.top button{background:transparent;border:1px solid rgba(255,255,255,.5);color:#fff;border-radius:6px;padding:4px 10px;font-size:.85rem}
+.seg{max-width:640px;margin:0 auto;display:flex;padding:0 12px}
+.seg button{flex:1;background:none;border:0;color:#fff;opacity:.75;padding:10px 6px;font-weight:600;border-bottom:3px solid transparent}
+.seg button[aria-current=true]{opacity:1;border-bottom-color:var(--yellow)}
+.corsia{height:6px;background:repeating-linear-gradient(90deg,var(--red) 0 16px,#fff 16px 24px,var(--water) 24px 40px,#fff 40px 48px)}
+main{max-width:640px;margin:0 auto;padding:16px}
+.intro{color:var(--muted);margin:0 0 14px;font-size:.95rem}
+.giorno{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px}
+.giorno h2{font:700 1.1rem var(--fc);margin:0 0 6px;text-transform:capitalize}
+.pisc{font-size:.92rem;margin:2px 0}
+.pisc b{font-weight:600}
+.pisc .ore{color:var(--muted);font-variant-numeric:tabular-nums}
+.fasce{display:flex;gap:8px;margin-top:10px}
+.fasce button{flex:1;border:2px solid var(--line);background:#fff;border-radius:10px;padding:10px 6px;font-weight:600;color:var(--muted)}
+.fasce button.si{border-color:var(--ok);background:#E7F3EC;color:var(--ok)}
+.fasce small{display:block;font-weight:500;font-size:.78rem}
+.squadra{margin-top:6px;font-size:.9rem;color:var(--muted)}
+.squadra .io{color:var(--ink);font-weight:700}
+.tag{display:inline-block;font:700 .72rem var(--fc);color:#fff;background:var(--water);border-radius:4px;padding:0 6px;margin-right:4px}
+.tag.S{background:var(--red)}
+.chi{display:grid;gap:8px}
+.chi button{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;text-align:left;font-weight:600;font-size:1.05rem}
+.vuoto{background:var(--card);border:1px dashed var(--line);border-radius:12px;padding:26px;text-align:center;color:var(--muted)}
+#toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:8px;display:none;z-index:9;max-width:92vw}
+#toast.err{background:var(--red)}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="toast" role="status"></div>
+<script>
+const CHIAVE_NOME = 'frame_turni_io';
+let sb=null; const S={ staff:[], turni:[], disp:new Set(), io:null, vista:'disp' };
+
+function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function hm(t){ return (t||'').slice(0,5); }
+function nomeGiorno(d){ const [y,m,g]=d.split('-').map(Number); return new Date(y,m-1,g).toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long'}); }
+function fasceTurno(t){ const f=[]; if(hm(t.ora_inizio)<'13:00') f.push('M'); if(hm(t.ora_fine)>'13:00') f.push('P'); return f; }
+function toast(m,err){ const t=document.getElementById('toast'); t.textContent=m; t.className=err?'err':''; t.style.display='block'; clearTimeout(toast._t); toast._t=setTimeout(()=>t.style.display='none', err?5000:1800); }
+function leggiIo(){ try{ return localStorage.getItem(CHIAVE_NOME); }catch(e){ return null; } }
+function scriviIo(v){ try{ v ? localStorage.setItem(CHIAVE_NOME,v) : localStorage.removeItem(CHIAVE_NOME); }catch(e){} }
+function messaggio(t){ document.getElementById('app').innerHTML='<header><div class="top"><h1>Calendario piscine</h1></div><div class="corsia"></div></header><main><div class="vuoto">'+t+'</div></main>'; }
+
+async function avvio(){
+  if(!window.supabase) return messaggio('Connessione assente: ricarica la pagina.');
+  if(!/^https:\/\/.+\.supabase\.co/.test(window.SUPABASE_URL||'')) return messaggio('Configurazione mancante.');
+  sb = supabase.createClient(window.SUPABASE_URL, window.SUPABASE_KEY, { auth:{ persistSession:false } });
+  const { data, error } = await sb.rpc('tp_pub_calendario');
+  if(error) return messaggio('Non riesco a caricare il calendario. Riprova tra poco.');
+  S.staff=data.staff||[]; S.turni=data.turni||[];
+  const salvato=leggiIo();
+  S.io = S.staff.find(c=>c.id===salvato) || null;
+  if(!S.io) return sceltaNome();
+  await caricaDisp(); disegna();
+}
+
+function sceltaNome(){
+  document.getElementById('app').innerHTML = `<header><div class="top"><h1>Chi sei?</h1></div><div class="corsia"></div></header>
+  <main><p class="intro">Tocca il tuo nome. Questo telefono se lo ricorderà.</p>
+  <div class="chi">${S.staff.map(c=>`<button onclick="scegli('${c.id}')">${esc(c.nome)}</button>`).join('') || '<div class="vuoto">Nessun collaboratore inserito.</div>'}</div></main>`;
+}
+async function scegli(id){ S.io=S.staff.find(c=>c.id===id); scriviIo(id); await caricaDisp(); disegna(); }
+function cambiaNome(){ scriviIo(null); S.io=null; S.disp=new Set(); sceltaNome(); }
+
+async function caricaDisp(){
+  const { data, error } = await sb.rpc('tp_pub_disp', { p_collab:S.io.id });
+  if(error){ toast('Non riesco a leggere la tua disponibilità.',true); return; }
+  S.disp = new Set((data||[]).map(d=>d.data+'|'+d.fascia));
+}
+
+function disegna(){
+  document.getElementById('app').innerHTML = `<header>
+    <div class="top"><h1>Ciao ${esc(S.io.nome)}</h1><button onclick="cambiaNome()">Non sei tu?</button></div>
+    <div class="seg"><button aria-current="${S.vista==='disp'}" onclick="vai('disp')">Disponibilità</button><button aria-current="${S.vista==='turni'}" onclick="vai('turni')">Turni</button></div>
+    <div class="corsia"></div></header><main id="main"></main>`;
+  S.vista==='disp' ? vistaDisp() : vistaTurni();
+}
+function vai(v){ S.vista=v; disegna(); }
+
+function giorni(){ return [...new Set(S.turni.map(t=>t.data))].sort(); }
+
+function vistaDisp(){
+  const m=document.getElementById('main'); const gg=giorni();
+  if(!gg.length){ m.innerHTML='<div class="vuoto">Al momento non ci sono date di piscine in programma.</div>'; return; }
+  m.innerHTML = '<p class="intro">Tocca Mattina e/o Pomeriggio nei giorni in cui puoi lavorare. Il verde vuol dire disponibile; ritocca per togliere.</p>' + gg.map(d=>{
+    const tg=S.turni.filter(t=>t.data===d);
+    const f=new Set(); tg.forEach(t=>fasceTurno(t).forEach(x=>f.add(x)));
+    return `<div class="giorno"><h2>${nomeGiorno(d)}</h2>
+      ${tg.map(t=>`<div class="pisc"><b>${esc(t.piscina)}</b> <span class="ore">${hm(t.ora_inizio)}–${hm(t.ora_fine)}</span></div>`).join('')}
+      <div class="fasce">${['M','P'].filter(x=>f.has(x)).map(x=>{const si=S.disp.has(d+'|'+x);
+        return `<button class="${si?'si':''}" aria-pressed="${si}" onclick="tocca('${d}','${x}')">${x==='M'?'Mattina':'Pomeriggio'}<small>${si?'✓ disponibile':'non indicata'}</small></button>`}).join('')}</div>
+    </div>`;
+  }).join('');
+}
+
+async function tocca(d,f){
+  const k=d+'|'+f, si=!S.disp.has(k);
+  si ? S.disp.add(k) : S.disp.delete(k); vistaDisp();
+  const { error } = await sb.rpc('tp_pub_set_disp', { p_collab:S.io.id, p_data:d, p_fascia:f, p_si:si });
+  if(error){ si ? S.disp.delete(k) : S.disp.add(k); vistaDisp(); toast(error.message||'Non salvato, riprova.',true); }
+}
+
+function vistaTurni(){
+  const m=document.getElementById('main');
+  const pub=S.turni.filter(t=>t.pubblicato);
+  const miei=pub.filter(t=>t.squadra.some(x=>x.id===S.io.id));
+  if(!pub.length){ m.innerHTML='<div class="vuoto">I turni non sono ancora stati pubblicati.</div>'; return; }
+  const scheda = t => `<div class="giorno"><h2>${nomeGiorno(t.data)}</h2>
+    <div class="pisc"><b>${esc(t.piscina)}</b> <span class="ore">${hm(t.ora_inizio)}–${hm(t.ora_fine)}</span></div>
+    <div class="squadra">${t.squadra.map(x=>`<div class="${x.id===S.io.id?'io':''}"><span class="tag ${x.ruolo}">${x.ruolo==='F'?'FOTO':'STAMPA'}</span>${esc(x.nome)}${x.id===S.io.id?' (tu)':''}</div>`).join('') || 'Squadra non ancora definita'}</div></div>`;
+  m.innerHTML = `<p class="intro"><b>I tuoi turni</b></p>${miei.length?miei.map(scheda).join(''):'<div class="vuoto" style="margin-bottom:16px">Per ora non sei in nessun turno.</div>'}
+    <p class="intro" style="margin-top:22px"><b>Tutti i turni</b></p>${pub.map(scheda).join('')}`;
+}
+
+avvio();
+</script>
+</body>
+</html>

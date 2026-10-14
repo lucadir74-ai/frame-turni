@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Frame · Incassi piscina</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<style>
+:root{--tile:#EEF4F5;--card:#fff;--ink:#12303A;--muted:#5B7480;--line:#D3E1E5;--water:#0F6B85;--red:#C8333A;--yellow:#E9B824;--ok:#2E7D4F;
+  --f:'Barlow',system-ui,-apple-system,'Segoe UI',sans-serif;--fc:'Barlow Semi Condensed','Barlow',system-ui,sans-serif;
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--tile);color:var(--ink);font:16px/1.45 var(--f)}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:3px solid var(--yellow);outline-offset:2px}
+header{background:var(--water);color:#fff}
+.top{max-width:520px;margin:0 auto;padding:14px 16px}
+.top h1{font:700 1.35rem var(--fc);margin:0}
+.top p{margin:2px 0 0;opacity:.9;text-transform:capitalize}
+.corsia{height:6px;background:repeating-linear-gradient(90deg,var(--red) 0 16px,#fff 16px 24px,var(--water) 24px 40px,#fff 40px 48px)}
+main{max-width:520px;margin:0 auto;padding:16px}
+.box{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
+.box h2{font:700 1.05rem var(--fc);margin:0 0 10px}
+.campo{display:grid;grid-template-columns:1fr 9em;align-items:center;gap:10px;margin-bottom:10px}
+.campo span{font-weight:600}
+input{border:1px solid var(--line);border-radius:8px;padding:10px;background:#fff;width:100%}
+input.euro{text-align:right;font-variant-numeric:tabular-nums}
+.spesa{display:grid;grid-template-columns:1fr 7em auto;gap:8px;margin-bottom:8px}
+.btn{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:9px 14px;font-weight:600}
+.btn.pri{background:var(--water);border-color:var(--water);color:#fff;width:100%;padding:13px;font-size:1.05rem}
+.btn.x{color:var(--red);padding:9px 12px}
+.tot{display:flex;justify-content:space-between;font-weight:700;font-size:1.1rem;font-variant-numeric:tabular-nums}
+.nota{color:var(--muted);font-size:.88rem;margin:8px 0 0}
+.vuoto{background:var(--card);border:1px dashed var(--line);border-radius:12px;padding:26px;text-align:center;color:var(--muted)}
+#toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ok);color:#fff;padding:10px 16px;border-radius:8px;display:none;z-index:9;max-width:92vw}
+#toast.err{background:var(--red)}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="toast" role="status"></div>
+<script>
+let sb=null; const codice=new URLSearchParams(location.search).get('k')||''; let D=null;
+
+function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function hm(t){ return (t||'').slice(0,5); }
+function nomeGiorno(d){ const [y,m,g]=d.split('-').map(Number); return new Date(y,m-1,g).toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long'}); }
+function eur(n){ return (n||0).toLocaleString('it-IT',{style:'currency',currency:'EUR'}); }
+function mostra(n){ return n==null ? '' : String(n).replace('.',','); }
+function num(v){ v=String(v||'').trim().replace(/\s|€/g,''); if(!v) return null; if(v.includes(',')) v=v.replace(/\./g,'').replace(',','.'); const n=Number(v); return isNaN(n)?NaN:Math.round(n*100)/100; }
+function toast(m,err){ const t=document.getElementById('toast'); t.textContent=m; t.className=err?'err':''; t.style.display='block'; clearTimeout(toast._t); toast._t=setTimeout(()=>t.style.display='none', err?5000:2200); }
+function messaggio(titolo,t){ document.getElementById('app').innerHTML='<header><div class="top"><h1>'+titolo+'</h1></div><div class="corsia"></div></header><main><div class="vuoto">'+t+'</div></main>'; }
+
+async function avvio(){
+  if(!window.supabase) return messaggio('Incassi','Connessione assente: ricarica la pagina.');
+  if(!/^https:\/\/.+\.supabase\.co/.test(window.SUPABASE_URL||'')) return messaggio('Incassi','Configurazione mancante.');
+  if(codice.length<16) return messaggio('Link non valido','Il link è incompleto. Chiedi agli organizzatori di rimandartelo.');
+  sb = supabase.createClient(window.SUPABASE_URL, window.SUPABASE_KEY, { auth:{ persistSession:false } });
+  const { data, error } = await sb.rpc('tp_inc_leggi', { p_codice:codice });
+  if(error){
+    if(/scaduto/i.test(error.message)) return messaggio('Link scaduto','Il link valeva fino a 3 giorni dopo la piscina. Per correzioni rivolgiti agli organizzatori.');
+    if(/non valido/i.test(error.message)) return messaggio('Link non valido','Questo link non è più attivo. Chiedi agli organizzatori quello nuovo.');
+    return messaggio('Incassi','Non riesco a caricare i dati. Riprova tra poco.');
+  }
+  D=data; disegna();
+}
+
+function disegna(){
+  const i=D.incasso||{};
+  const [y,m,g]=D.scade.split('-').map(Number);
+  const scade=new Date(y,m-1,g).toLocaleDateString('it-IT',{day:'numeric',month:'long'});
+  document.getElementById('app').innerHTML = `<header><div class="top"><h1>${esc(D.piscina)}</h1><p>${nomeGiorno(D.data)}, ${hm(D.ora_inizio)}–${hm(D.ora_fine)}</p></div><div class="corsia"></div></header>
+  <main>
+    <div class="box"><h2>Incasso</h2>
+      <label class="campo"><span>Contanti</span><input class="euro" id="cash" inputmode="decimal" placeholder="0,00" value="${mostra(i.cash)}" oninput="totale()"></label>
+      <label class="campo"><span>POS</span><input class="euro" id="pos" inputmode="decimal" placeholder="0,00" value="${mostra(i.pos)}" oninput="totale()"></label>
+      <div class="tot"><span>Totale incasso</span><span id="tot"></span></div>
+    </div>
+    <div class="box"><h2>Uscite</h2>
+      <label class="campo"><span>% piscina</span><input class="euro" id="perc" inputmode="decimal" placeholder="0,00" value="${mostra(i.percentuale_piscina)}"></label>
+      <div id="spese"></div>
+      <button class="btn" onclick="aggiungiSpesa()">+ Aggiungi spesa (bar o altro)</button>
+    </div>
+    <button class="btn pri" id="salva" onclick="salva()">Salva</button>
+    <p class="nota">${i.aggiornato_il?'Ultimo salvataggio: '+new Date(i.aggiornato_il).toLocaleString('it-IT',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})+'. ':''}Puoi correggere e salvare di nuovo fino al ${scade}. Scrivi solo i numeri, per esempio 120 o 12,50.</p>
+  </main>`;
+  const sp=document.getElementById('spese');
+  (D.spese.length?D.spese:[]).forEach(s=>aggiungiSpesa(s.descrizione, mostra(s.importo)));
+  totale();
+}
+function aggiungiSpesa(desc,imp){
+  const r=document.createElement('div'); r.className='spesa';
+  r.innerHTML=`<input class="sd" placeholder="Descrizione (es. bar)" value="${esc(desc||'')}"><input class="si euro" inputmode="decimal" placeholder="0,00" value="${esc(imp||'')}"><button class="btn x" aria-label="Togli spesa" onclick="this.parentNode.remove()">×</button>`;
+  document.getElementById('spese').appendChild(r);
+  if(desc===undefined) r.querySelector('.sd').focus();
+}
+function totale(){
+  const c=num(document.getElementById('cash').value)||0, p=num(document.getElementById('pos').value)||0;
+  document.getElementById('tot').textContent = (isNaN(c)||isNaN(p)) ? '—' : eur(c+p);
+}
+async function salva(){
+  const cash=num(document.getElementById('cash').value), pos=num(document.getElementById('pos').value), perc=num(document.getElementById('perc').value);
+  if([cash,pos,perc].some(v=>Number.isNaN(v))) return toast('Controlla gli importi: scrivi solo numeri.',true);
+  const spese=[];
+  for(const r of document.querySelectorAll('#spese .spesa')){
+    const d=r.querySelector('.sd').value.trim(), v=num(r.querySelector('.si').value);
+    if(!d && v==null) continue;
+    if(!d) return toast('Scrivi la descrizione della spesa.',true);
+    if(v==null || Number.isNaN(v)) return toast('Controlla l\'importo della spesa "'+d+'".',true);
+    spese.push({ descrizione:d, importo:v });
+  }
+  const b=document.getElementById('salva'); b.disabled=true; b.textContent='Salvataggio…';
+  const { error } = await sb.rpc('tp_inc_salva', { p_codice:codice, p_cash:cash, p_pos:pos, p_perc:perc, p_spese:spese });
+  b.disabled=false; b.textContent='Salva';
+  if(error) return toast(/scaduto/i.test(error.message)?'Link scaduto: rivolgiti agli organizzatori.':(error.message||'Non salvato, riprova.'),true);
+  toast('Salvato ✓');
+  const r = await sb.rpc('tp_inc_leggi', { p_codice:codice }); if(!r.error){ D=r.data; disegna(); }
+}
+avvio();
+</script>
+</body>
+</html>
