@@ -42,6 +42,17 @@ main{max-width:640px;margin:0 auto;padding:16px}
 .chi{display:grid;gap:8px}
 .chi button{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;text-align:left;font-weight:600;font-size:1.05rem}
 .vuoto{background:var(--card);border:1px dashed var(--line);border-radius:12px;padding:26px;text-align:center;color:var(--muted)}
+.iscr{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+.campo{display:grid;gap:4px;margin-bottom:12px}
+.campo>span{font-size:.85rem;font-weight:600;color:var(--muted)}
+.campo input{border:1px solid var(--line);border-radius:8px;padding:10px;font:inherit;width:100%;background:#fff}
+.scelte{display:flex;gap:8px;flex-wrap:wrap}
+.scelte label{flex:1;min-width:6.5em;border:2px solid var(--line);border-radius:10px;padding:9px 6px;text-align:center;font-weight:600;color:var(--muted);cursor:pointer}
+.scelte input{position:absolute;opacity:0}
+.scelte label:has(input:checked){border-color:var(--ok);background:#E7F3EC;color:var(--ok)}
+.btnpri{width:100%;background:var(--water);color:#fff;border:0;border-radius:10px;padding:13px;font-weight:600;font-size:1.05rem}
+.btnsec{width:100%;background:none;border:1px dashed var(--water);color:var(--water);border-radius:10px;padding:13px;font-weight:600;margin-top:14px}
+.privacy{font-size:.82rem;color:var(--muted);margin:4px 0 14px}
 #toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:8px;display:none;z-index:9;max-width:92vw}
 #toast.err{background:var(--red)}
 </style>
@@ -78,7 +89,35 @@ async function avvio(){
 function sceltaNome(){
   document.getElementById('app').innerHTML = `<header><div class="top"><img class="logo" src="logo-bianco.png" alt="Frame About You"><h1>Chi sei?</h1></div><div class="corsia"></div></header>
   <main><p class="intro">Tocca il tuo nome. Questo telefono se lo ricorderà.</p>
-  <div class="chi">${S.staff.map(c=>`<button onclick="scegli('${c.id}')">${esc(c.nome)}</button>`).join('') || '<div class="vuoto">Nessun collaboratore inserito.</div>'}</div></main>`;
+  <div class="chi">${S.staff.map(c=>`<button onclick="scegli('${c.id}')">${esc(c.nome)}</button>`).join('') || '<div class="vuoto">Ancora nessuno in elenco: iscriviti tu per primo.</div>'}</div>
+  <button class="btnsec" onclick="formIscrizione()">Non sei in elenco? Iscriviti</button></main>`;
+}
+function formIscrizione(){
+  document.getElementById('app').innerHTML = `<header><div class="top"><img class="logo" src="logo-bianco.png" alt="Frame About You"><h1>Iscriviti</h1><button onclick="sceltaNome()">Indietro</button></div><div class="corsia"></div></header>
+  <main><form class="iscr" id="fIscr" onsubmit="inviaIscrizione(event)">
+    <label class="campo"><span>Nome e cognome</span><input name="nome" autocomplete="name" required maxlength="80"></label>
+    <label class="campo"><span>Telefono</span><input name="telefono" type="tel" autocomplete="tel" required></label>
+    <label class="campo"><span>Email</span><input name="email" type="email" autocomplete="email" required maxlength="120"></label>
+    <div class="campo"><span>Cosa fai</span><div class="scelte">
+      <label><input type="radio" name="ruolo" value="F" required>Foto</label>
+      <label><input type="radio" name="ruolo" value="S">Stampa</label>
+      <label><input type="radio" name="ruolo" value="FS">Entrambi</label></div></div>
+    <div class="campo"><span>Hai la macchina?</span><div class="scelte">
+      <label><input type="radio" name="auto" value="1" required>Sì</label>
+      <label><input type="radio" name="auto" value="0">No</label></div></div>
+    <p class="privacy">Telefono ed email li vedono solo gli organizzatori di Frame About You e servono solo a organizzare i turni. Gli altri collaboratori vedono soltanto il tuo nome.</p>
+    <button class="btnpri" type="submit">Iscriviti</button>
+  </form></main>`;
+}
+async function inviaIscrizione(ev){
+  ev.preventDefault(); const f=ev.target, b=f.querySelector('button[type=submit]');
+  b.disabled=true; b.textContent='Invio…';
+  const { data, error } = await sb.rpc('tp_pub_iscrivi', { p_nome:f.nome.value, p_telefono:f.telefono.value, p_email:f.email.value,
+    p_ruolo:f.ruolo.value, p_auto:f.auto.value==='1' });
+  if(error){ b.disabled=false; b.textContent='Iscriviti'; toast(error.message||'Non riesco a iscriverti, riprova.',true); return; }
+  if(!S.staff.some(c=>c.id===data.id)) S.staff.push({ id:data.id, nome:data.nome });
+  toast(data.esistente ? 'Eri già in elenco come '+data.nome+'.' : 'Iscrizione fatta!');
+  await scegli(data.id);
 }
 async function scegli(id){ S.io=S.staff.find(c=>c.id===id); scriviIo(id); await caricaDisp(); disegna(); }
 function cambiaNome(){ scriviIo(null); S.io=null; S.disp=new Set(); sceltaNome(); }

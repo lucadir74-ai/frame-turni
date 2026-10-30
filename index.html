@@ -243,7 +243,8 @@ async function ricarica(){ await caricaMese(); disegna(); }
 
 // ---------- struttura ----------
 function disegna(){
-  const tabs=[['turni','Turni'],['disponibilita','Disponibilità'],['collaboratori','Collaboratori'],['piscine','Sedi']];
+  const nNuovi=S.collab.filter(c=>c.nuovo).length;
+  const tabs=[['turni','Turni'],['disponibilita','Disponibilità'],['collaboratori','Collaboratori'+(nNuovi?' ('+nNuovi+' nuovi)':'')],['piscine','Sedi']];
   document.getElementById('app').innerHTML = `
   <header>
     <div class="top"><img class="logo" src="logo-bianco.png" alt="Frame About You"><h1>Turni</h1><span class="chi">${esc(S.me.nome)}</span><button onclick="esci()">Esci</button></div>
@@ -606,8 +607,11 @@ function vistaCollab(){
   const m=document.getElementById('main');
   let h='<div class="barra"><span class="spazio"></span><button class="btn pri" onclick="formCollab()">Nuovo collaboratore</button></div>';
   if(!S.collab.length) h+='<div class="vuoto">Nessun collaboratore. Aggiungi il primo.</div>';
+  const nNuovi=S.collab.filter(c=>c.nuovo).length;
+  if(nNuovi) h+=`<p class="note">${nNuovi===1?'1 nuovo iscritto':nNuovi+' nuovi iscritti'} dal calendario: controlla i dati e il livello (parte da 3) e premi Salva per confermarlo.</p>`;
   h+='<div class="lista">'+S.collab.map(c=>`<div class="riga ${c.attivo?'':'off'}">
     <b>${esc(c.nome)}</b>
+    ${c.nuovo?'<span class="tag" style="background:var(--water);color:#fff;border-color:var(--water)">NUOVO</span>':''}
     <span class="tag">${RUOLI[c.ruolo]}</span>
     <span class="stelle" title="Livello ${c.livello}">${stelle(c.livello)}</span>
     ${c.auto?'<span title="Ha la macchina">🚗</span>':''}
@@ -625,7 +629,7 @@ function formCollab(id){
       <label class="campo"><span>Ruolo</span><select name="ruolo">${Object.entries(RUOLI).map(([k,l])=>`<option value="${k}" ${c?.ruolo===k?'selected':''}>${l}</option>`).join('')}</select></label>
       <label class="campo"><span>Livello (1–5)</span><select name="livello">${[1,2,3,4,5].map(n=>`<option ${ (c?c.livello:3)===n?'selected':''}>${n}</option>`).join('')}</select></label>
       <label class="campo"><span>Telefono</span><input name="telefono" type="tel" value="${esc(c?.telefono)}"></label>
-      <label class="campo"><span>Email di accesso</span><input name="email" type="email" value="${esc(c?.email)}"></label>
+      <label class="campo"><span>Email</span><input name="email" type="email" value="${esc(c?.email)}"></label>
     </div>
     <label class="campo"><span>Indirizzo</span><input name="indirizzo" value="${esc(c?.indirizzo)}"></label>
     <label class="campo"><span>Note</span><textarea name="note" rows="2">${esc(c?.note)}</textarea></label>
@@ -636,7 +640,7 @@ function formCollab(id){
   async f=>{
     const rec={ nome:f.nome.value.trim(), ruolo:f.ruolo.value, livello:+f.livello.value, telefono:f.telefono.value.trim()||null,
       email:f.email.value.trim().toLowerCase()||null, indirizzo:f.indirizzo.value.trim()||null, note:f.note.value.trim()||null,
-      auto:f.auto.checked, organizzatore:f.organizzatore.checked, attivo:f.attivo.checked };
+      auto:f.auto.checked, organizzatore:f.organizzatore.checked, attivo:f.attivo.checked, nuovo:false };
     if(c && c.id===S.me.id && (!rec.organizzatore || !rec.attivo)){ toast('Non puoi togliere a te stesso il ruolo di organizzatore.',true); return false; }
     const r = c ? await sb.from('tp_collaboratori').update(rec).eq('id',c.id) : await sb.from('tp_collaboratori').insert(rec);
     if(errore(r.error)) return false;
