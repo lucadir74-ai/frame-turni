@@ -349,7 +349,7 @@ function analisiTurno(t){
 function vistaTurni(){
   const m=document.getElementById('main');
   const bozze=S.turni.filter(t=>!t.pubblicato && !t.annullato).length;
-  let h = barraMese(`<button class="btn" onclick="formLinkCalendario()">Link calendario</button><button class="btn" ${bozze?'':'disabled'} onclick="formProponi(false)">Proponi turni</button><button class="btn" ${bozze?'':'disabled'} onclick="pubblicaMese()">Pubblica ${bozze||''} turni in bozza</button><button class="btn pri" onclick="formTurno()">Nuovo turno</button>`);
+  let h = barraMese(`<button class="btn" onclick="formLinkCalendario()">Link calendario</button><button class="btn" ${bozze?'':'disabled'} onclick="formProponi(false)">Proponi turni</button><button class="btn" ${bozze?'':'disabled'} onclick="pubblicaMese()">Pubblica ${bozze||''} turni in bozza</button><button class="btn" onclick="formModificaBlocco()">Modifica più turni</button><button class="btn pri" onclick="formTurno()">Nuovo turno</button>`);
   if(S.ritiri && S.ritiri.length) h+='<div class="ritiri"><b>Ritiri da gestire</b>'+S.ritiri.map(r=>{const t=r.tp_turni||{}; const c=collabById(r.collaboratore_id)||{nome:'?'};
     return `<div class="rit"><span>${esc(c.nome)} si è ritirato/a da <b>${esc((piscinaById(t.piscina_id)||{nome:'?'}).nome)}</b>, ${t.data?nomeGiorno(t.data):''} ${hm(t.ora_inizio)}–${hm(t.ora_fine)}: era in squadra, il posto è scoperto.</span><button class="btn pic" onclick="ritiroVisto('${r.id}')">Visto</button></div>`}).join('')+'</div>';
   if(!S.piscine.some(p=>p.attiva)) h+='<div class="vuoto">Prima inserisci le sedi nella scheda Sedi, poi potrai creare i turni.</div>';
@@ -465,6 +465,65 @@ function formTurno(id){
     if(primo.slice(0,7)!==S.mese) S.mese=primo.slice(0,7);
     toast(nuovi.length===1?'Turno creato.':nuovi.length+' turni creati.'); await ricarica();
   }, t?'Salva turno':'Crea turni');
+}
+
+// ---------- MODIFICA DI PIÙ TURNI INSIEME ----------
+function formModificaBlocco(){
+  const [da,a]=limitiMese(S.mese);
+  apriDialog('Modifica più turni', `
+    <p class="note" style="margin:0 0 12px">Scegli quali turni modificare, poi cosa cambiare. Per un turno solo usa “Modifica” sul turno.</p>
+    <label class="campo"><span>Sede</span><select name="sede" required>${S.piscine.map(p=>`<option value="${p.id}">${esc(p.nome)}</option>`).join('')}</select></label>
+    <div class="due">
+      <label class="campo"><span>Dal</span><input type="date" name="da" value="${da}" required></label>
+      <label class="campo"><span>Al</span><input type="date" name="a" value="${a}" required></label>
+    </div>
+    <div class="due">
+      <label class="campo"><span>Quali turni</span><select name="fascia"><option value="MP">Mattina e pomeriggio</option><option value="M">Solo mattina</option><option value="P">Solo pomeriggio</option></select></label>
+      <label class="campo"><span>Quali giorni</span><select name="giorni"><option value="tutti">Tutti</option><option value="we">Sabati e domeniche</option><option value="fer">Dal lunedì al venerdì</option></select></label>
+    </div>
+    <label class="campo"><span>Cosa vuoi fare</span><select name="azione" onchange="for(const x of this.form.querySelectorAll('[data-az]')) x.style.display = x.dataset.az===this.value?'':'none'">
+      <option value="orari">Cambiare gli orari</option><option value="posti">Cambiare i posti richiesti</option><option value="elimina">Eliminare i turni</option></select></label>
+    <div class="due" data-az="orari">
+      <label class="campo"><span>Nuovo inizio</span><input type="time" name="ini"></label>
+      <label class="campo"><span>Nuova fine</span><input type="time" name="fin"></label>
+    </div>
+    <div class="due" data-az="posti" style="display:none">
+      <label class="campo"><span>Fotografi richiesti</span><input type="number" min="0" max="9" name="fot" value="1"></label>
+      <label class="campo"><span>Stampatori richiesti</span><input type="number" min="0" max="9" name="sta" value="1"></label>
+    </div>
+    <p class="note" data-az="elimina" style="display:none">Si cancellano anche candidature, assegnazioni, incassi e spese di quei turni. Per una giornata di pioggia usa invece “Annulla turno”.</p>`,
+  async f=>{
+    if(f.a.value<f.da.value){ toast('Controlla le date.',true); return false; }
+    const r=await sb.from('tp_turni').select('*').eq('piscina_id',f.sede.value).gte('data',f.da.value).lte('data',f.a.value);
+    if(errore(r.error)) return false;
+    const scelti=r.data.filter(t=>{
+      const [y,m,g]=t.data.split('-').map(Number); const wd=new Date(y,m-1,g).getDay(); const we=wd===0||wd===6;
+      if(f.giorni.value==='we'&&!we) return false; if(f.giorni.value==='fer'&&we) return false;
+      return f.fascia.value.includes(hm(t.ora_inizio)<'13:00'?'M':'P');
+    });
+    if(!scelti.length){ toast('Nessun turno corrisponde a queste scelte.',true); return false; }
+    const ids=scelti.map(t=>t.id), pubb=scelti.filter(t=>t.pubblicato).length;
+    const it=x=>x.split('-').reverse().join('/'); const sede=(piscinaById(f.sede.value)||{nome:'?'}).nome;
+    const quali=scelti.length+' turni di '+sede+' dal '+it(f.da.value)+' al '+it(f.a.value)+(pubb?' ('+pubb+' già pubblicati: avvisate i ragazzi)':'');
+    let rec=null;
+    if(f.azione.value==='orari'){
+      if(!f.ini.value||!f.fin.value||f.fin.value<=f.ini.value){ toast('Inserisci un orario di inizio e una fine successiva.',true); return false; }
+      if(new Set(scelti.map(t=>t.data)).size<scelti.length){ toast('Per cambiare gli orari scegli “Solo mattina” o “Solo pomeriggio”: altrimenti i due turni dello stesso giorno avrebbero lo stesso orario.',true); return false; }
+      if(!confirm('Imposto l\'orario '+f.ini.value+'–'+f.fin.value+' su '+quali+'. Procedo?')) return false;
+      rec={ora_inizio:f.ini.value, ora_fine:f.fin.value};
+    } else if(f.azione.value==='posti'){
+      if(!confirm('Imposto '+f.fot.value+' fotografi e '+f.sta.value+' stampatori su '+quali+'. Procedo?')) return false;
+      rec={fotografi:+f.fot.value, stampatori:+f.sta.value};
+    } else {
+      if(!confirm('ELIMINO '+quali+', con candidature e assegnazioni. Non si può annullare. Procedo?')) return false;
+    }
+    for(let i=0;i<ids.length;i+=100){
+      const parte=ids.slice(i,i+100);
+      const q = rec ? sb.from('tp_turni').update(rec).in('id',parte) : sb.from('tp_turni').delete().in('id',parte);
+      if(errore((await q).error)) return false;
+    }
+    toast(scelti.length+(rec?' turni modificati.':' turni eliminati.')); await ricarica();
+  }, 'Continua');
 }
 
 async function eliminaTurno(id){
@@ -873,6 +932,7 @@ function renderGC(){
       <div class="gca"><select id="add_${t.id}"><option value="">Aggiungi candidato…</option>${altri.map(c=>`<option value="${c.id}">${esc(c.nome)}</option>`).join('')}</select>
         <button type="button" class="btn pic" onclick="const v=document.getElementById('add_${t.id}').value; if(v) toggleCand(v,'${t.id}')">Aggiungi</button>
         <button type="button" class="btn pic pri" onclick="chiudiDialog(); formAssegna('${t.id}')">Assegna persone</button></div>`}
+      <div class="gca" style="margin-top:6px"><button type="button" class="btn pic" onclick="chiudiDialog(); formTurno('${t.id}')">Modifica data e orari</button></div>
     </div>`;
   }).join('') || '<div class="vuoto">Nessun turno in questo giorno.</div>';
 }
