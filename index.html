@@ -67,6 +67,32 @@ main{max-width:1100px;margin:0 auto;padding:16px}
 .griglia .fx button.sq{border-color:var(--water);background:var(--water);color:#fff}
 .griglia .pisc .pieno{color:var(--ok);font-weight:700}
 .griglia .pisc .manca{color:var(--warn);font-weight:700}
+.vistab{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin:0 0 12px}
+.vistab button{border:0;background:var(--card);padding:6px 14px;font-weight:600;color:var(--muted)}
+.vistab button[aria-current=true]{background:var(--ink);color:#fff}
+.calo{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+.calo .wd{text-align:center;font:600 .8rem var(--fc);color:var(--muted);padding:2px 0}
+.calo .gg{background:var(--card);border:1px solid var(--line);border-radius:8px;min-height:92px;padding:4px 5px;display:flex;flex-direction:column;gap:3px;cursor:pointer;min-width:0}
+.calo .gg:hover{border-color:var(--water)}
+.calo .gg.vuoto{background:transparent;border-color:transparent;cursor:default}
+.calo .gg.off{background:#F8F8F9;cursor:default}
+.calo .gg.off:hover{border-color:var(--line)}
+.calo .gg.oggi{border-color:var(--ink)}
+.calo .num{font:700 .85rem var(--fc)}
+.calo .gg.off .num{color:#B5B6B9}
+.calo .cr{display:flex;gap:5px;align-items:baseline;font-size:.78rem;border-left:4px solid var(--c);background:#FAFAFB;border-radius:4px;padding:2px 5px;white-space:nowrap;overflow:hidden}
+.calo .cr b{color:var(--c)}
+.calo .cr .pieno{color:var(--ok);font-weight:700}
+.calo .cr .manca{color:var(--warn);font-weight:700}
+.calo .cr .pub{color:var(--water)}
+.calo .cr .nm{color:var(--muted);overflow:hidden;text-overflow:ellipsis}
+.calo .cr.ann{opacity:.5;text-decoration:line-through}
+.gct{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:10px}
+.gcl{margin:8px 0}
+.gcr{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--line)}
+.gca{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.gca select{border:1px solid var(--line);border-radius:6px;padding:5px;font:inherit;flex:1;min-width:150px}
+@media (max-width:700px){ .calo .cr .nm{display:none} .calo .gg{min-height:70px} }
 .pres{font-size:.88rem;margin:6px 0 0}
 .pres.ok{color:var(--ok);font-weight:600}
 .pres.da{color:var(--warn);font-weight:600}
@@ -784,6 +810,11 @@ function vistaDisp(){
   if(sediMese.length) h+='<div class="sedi">'+sediMese.map(p=>`<button aria-current="${S.sedeDisp===p.id}" onclick="sedeDisp('${p.id}')">${esc(p.nome)}<small>${turniOk.filter(t=>t.piscina_id===p.id).length} turni</small></button>`).join('')
     +(sediMese.length>1?`<button aria-current="${S.sedeDisp==='tutte'}" onclick="sedeDisp('tutte')">Tutte</button>`:'')+'</div>';
   if(!turniV.length){ m.innerHTML=h+'<div class="vuoto">Nessun turno in questo mese. Inserisci prima i turni (sede, data e orario) nella scheda Turni.</div>'; return; }
+  h+=`<div class="vistab"><button aria-current="${S.candVista!=='tab'}" onclick="candVista('cal')">Calendario</button><button aria-current="${S.candVista==='tab'}" onclick="candVista('tab')">Tabella</button></div>`;
+  if(S.candVista!=='tab'){
+    const tutti = S.sedeDisp==='tutte' ? S.turni : S.turni.filter(t=>t.piscina_id===S.sedeDisp);   // anche gli annullati, barrati
+    m.innerHTML = h + calendarioCand(tutti); return;
+  }
   if(!attivi.length){ m.innerHTML=h+'<div class="vuoto">Nessun collaboratore attivo.</div>'; return; }
   h+='<div class="griglia"><table><thead><tr><th class="nome">Collaboratore</th>'+turniV.map(t=>{
     const [y,mm,g]=t.data.split('-').map(Number); const wd=new Date(y,mm-1,g).toLocaleDateString('it-IT',{weekday:'short'});
@@ -800,6 +831,51 @@ function vistaDisp(){
   m.innerHTML=h+'</tbody></table></div><p class="note">✓ = candidato · ★ = in squadra · in alto i candidati sui posti del turno.</p>';
 }
 function sedeDisp(id){ S.sedeDisp=id; vistaDisp(); }
+function candVista(v){ S.candVista=v; vistaDisp(); }
+function nomeC(id){ return (collabById(id)||{nome:'?'}).nome; }
+function calendarioCand(turni){
+  const [y,mm]=S.mese.split('-').map(Number);
+  const primo=new Date(y,mm-1,1), ult=new Date(y,mm,0).getDate(), vuoti=(primo.getDay()+6)%7, o=oggi();
+  let h='<div class="calo">'+['Lun','Mar','Mer','Gio','Ven','Sab','Dom'].map(x=>`<div class="wd">${x}</div>`).join('');
+  for(let i=0;i<vuoti;i++) h+='<div class="gg vuoto"></div>';
+  for(let g=1; g<=ult; g++){
+    const d=S.mese+'-'+String(g).padStart(2,'0');
+    const tg=turni.filter(t=>t.data===d).sort((a,b)=>(piscinaById(a.piscina_id)?.nome||'').localeCompare(piscinaById(b.piscina_id)?.nome||'')||hm(a.ora_inizio).localeCompare(hm(b.ora_inizio)));
+    h+=`<div class="gg ${tg.length?'':'off'} ${d===o?'oggi':''}" ${tg.length?`onclick="giornoCand('${d}')" role="button" tabindex="0"`:''}><div class="num">${g}</div>`
+      + tg.map(t=>{
+          const p=piscinaById(t.piscina_id)||{nome:'?'}; const k=S.cand.filter(x=>x.turno_id===t.id); const posti=(t.fotografi||0)+(t.stampatori||0);
+          const nomi=k.map(x=>{ const sq=S.ass.some(a=>a.turno_id===t.id&&a.collaboratore_id===x.collaboratore_id); return (sq?'★':'')+esc(nomeC(x.collaboratore_id).split(' ')[0]); });
+          const lett=hm(t.ora_inizio)<'13:00'?'M':'P';
+          return `<div class="cr ${t.annullato?'ann':''}" style="--c:${coloreSede(p)}" title="${esc(p.nome)} ${hm(t.ora_inizio)}–${hm(t.ora_fine)}">
+            <b>${lett}</b><span class="${t.annullato?'':k.length>=posti?'pieno':'manca'}">${t.annullato?'annull.':k.length+'/'+posti}</span>
+            <span class="nm">${nomi.slice(0,3).join(', ')}${nomi.length>3?' +'+(nomi.length-3):''}</span></div>`;
+        }).join('') + '</div>';
+  }
+  return h+'</div><p class="note">Clic su un giorno per vedere e gestire i candidati. Conteggio verde = candidati sufficienti per i posti, arancione = ne mancano. ★ davanti a un nome = in squadra.</p>';
+}
+function giornoCand(d){
+  apriDialog(nomeGiorno(d).replace(/^./,c=>c.toUpperCase()), `<div id="gc" data-d="${d}"></div>`);
+  renderGC();
+}
+function renderGC(){
+  const box=document.getElementById('gc'); if(!box) return; const d=box.dataset.d;
+  const tg=S.turni.filter(t=>t.data===d && (S.sedeDisp==='tutte'||t.piscina_id===S.sedeDisp)).sort((a,b)=>hm(a.ora_inizio).localeCompare(hm(b.ora_inizio)));
+  box.innerHTML = tg.map(t=>{
+    const p=piscinaById(t.piscina_id)||{nome:'?'}; const k=S.cand.filter(x=>x.turno_id===t.id); const posti=(t.fotografi||0)+(t.stampatori||0);
+    const altri=S.collab.filter(c=>c.attivo && !k.some(x=>x.collaboratore_id===c.id)).sort((a,b)=>a.nome.localeCompare(b.nome));
+    return `<div class="gct" style="border-left:6px solid ${coloreSede(p)}">
+      <div class="t-head"><b>${esc(p.nome)}</b><span class="t-ora">${hm(t.ora_inizio)}–${hm(t.ora_fine)}</span>
+        <span class="stato ${t.annullato?'ann':t.pubblicato?'':'bozza'}">${t.annullato?'Annullato':t.pubblicato?'Pubblicato':'Bozza'}</span></div>
+      <div class="note">Servono ${t.fotografi} foto + ${t.stampatori} stampa · candidati <b>${k.length}</b> su ${posti} posti</div>
+      ${t.annullato?'':`<div class="gcl">${k.map(x=>{ const c=collabById(x.collaboratore_id)||{nome:'?'}; const sq=S.ass.some(a=>a.turno_id===t.id&&a.collaboratore_id===c.id);
+        return `<div class="gcr"><span>${sq?'<b title="In squadra">★</b> ':''}${esc(c.nome)} <small class="note">${RUOLI[c.ruolo]||''} · <span class="stelle">${stelle(c.livello||0)}</span>${c.auto?' · 🚗':''}</small></span>
+          <button type="button" class="btn pic del" onclick="toggleCand('${c.id}','${t.id}')">Togli</button></div>`; }).join('') || '<div class="note">Nessun candidato</div>'}</div>
+      <div class="gca"><select id="add_${t.id}"><option value="">Aggiungi candidato…</option>${altri.map(c=>`<option value="${c.id}">${esc(c.nome)}</option>`).join('')}</select>
+        <button type="button" class="btn pic" onclick="const v=document.getElementById('add_${t.id}').value; if(v) toggleCand(v,'${t.id}')">Aggiungi</button>
+        <button type="button" class="btn pic pri" onclick="chiudiDialog(); formAssegna('${t.id}')">Assegna persone</button></div>`}
+    </div>`;
+  }).join('') || '<div class="vuoto">Nessun turno in questo giorno.</div>';
+}
 async function toggleCand(cid,tid){
   const c=S.cand.find(x=>x.collaboratore_id===cid&&x.turno_id===tid);
   const r = c ? await sb.from('tp_candidature').delete().eq('id',c.id)
@@ -807,6 +883,7 @@ async function toggleCand(cid,tid){
   if(errore(r.error)) return;
   if(c) S.cand=S.cand.filter(x=>x!==c); else S.cand.push(r.data);
   const sx=document.querySelector('.griglia')?.scrollLeft; vistaDisp(); const g=document.querySelector('.griglia'); if(g) g.scrollLeft=sx||0;
+  renderGC();
 }
 async function ritiroVisto(id){
   if(errore((await sb.from('tp_ritiri').update({visto:true}).eq('id',id)).error)) return;
