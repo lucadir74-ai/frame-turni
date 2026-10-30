@@ -45,6 +45,8 @@ main{max-width:640px;margin:0 auto;padding:16px}
 .squadra .io{color:var(--ink);font-weight:700}
 .tag{display:inline-block;font:700 .72rem var(--fc);color:#fff;background:var(--water);border-radius:4px;padding:0 6px;margin-right:4px}
 .tag.S{background:var(--grigio)}
+.giorno.annullato{opacity:.6}
+.annullo{display:inline-block;font-weight:700;font-size:.8rem;color:var(--red);margin-left:6px}
 .chi{display:grid;gap:8px}
 .chi button{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;text-align:left;font-weight:600;font-size:1.05rem}
 .vuoto{background:var(--card);border:1px dashed var(--line);border-radius:12px;padding:26px;text-align:center;color:var(--muted)}
@@ -73,7 +75,9 @@ let sb=null; const S={ staff:[], turni:[], disp:new Set(), io:null, vista:'disp'
 function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function hm(t){ return (t||'').slice(0,5); }
 function nomeGiorno(d){ const [y,m,g]=d.split('-').map(Number); return new Date(y,m-1,g).toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long'}); }
-function fasceTurno(t){ const f=[]; if(hm(t.ora_inizio)<'13:00') f.push('M'); if(hm(t.ora_fine)>'13:00') f.push('P'); return f; }
+function minuti(s){ const [h,m]=hm(s).split(':').map(Number); return h*60+(m||0); }
+// fascia di un turno: decide l'orario di inizio (prima delle 13 = mattina, dalle 13 = sera); oltre 8 ore li chiede tutti e due
+function fasceTurno(t){ if(minuti(t.ora_fine)-minuti(t.ora_inizio)>480) return ['M','P']; return [hm(t.ora_inizio)<'13:00'?'M':'P']; }
 function toast(m,err){ const t=document.getElementById('toast'); t.textContent=m; t.className=err?'err':''; t.style.display='block'; clearTimeout(toast._t); toast._t=setTimeout(()=>t.style.display='none', err?5000:1800); }
 function leggiIo(){ try{ return localStorage.getItem(CHIAVE_NOME); }catch(e){ return null; } }
 function scriviIo(v){ try{ v ? localStorage.setItem(CHIAVE_NOME,v) : localStorage.removeItem(CHIAVE_NOME); }catch(e){} }
@@ -143,13 +147,14 @@ function disegna(){
 }
 function vai(v){ S.vista=v; disegna(); }
 
-function giorni(){ return [...new Set(S.turni.map(t=>t.data))].sort(); }
+const attivi = () => S.turni.filter(t=>!t.annullato);
+function giorni(){ return [...new Set(attivi().map(t=>t.data))].sort(); }
 
 function vistaDisp(){
   const m=document.getElementById('main'); const gg=giorni();
   if(!gg.length){ m.innerHTML='<div class="vuoto">Al momento non ci sono date in programma.</div>'; return; }
   m.innerHTML = '<p class="intro">Tocca Mattina e/o Sera nei giorni in cui puoi lavorare. Il verde vuol dire disponibile; ritocca per togliere.</p>' + gg.map(d=>{
-    const tg=S.turni.filter(t=>t.data===d);
+    const tg=attivi().filter(t=>t.data===d);
     const f=new Set(); tg.forEach(t=>fasceTurno(t).forEach(x=>f.add(x)));
     return `<div class="giorno"><h2>${nomeGiorno(d)}</h2>
       ${tg.map(t=>`<div class="pisc"><b>${esc(t.piscina)}</b> <span class="ore">${hm(t.ora_inizio)}–${hm(t.ora_fine)}</span></div>`).join('')}
@@ -171,8 +176,8 @@ function vistaTurni(){
   const pub=S.turni.filter(t=>t.pubblicato);
   const miei=pub.filter(t=>t.squadra.some(x=>x.id===S.io.id));
   if(!pub.length){ m.innerHTML='<div class="vuoto">I turni non sono ancora stati pubblicati.</div>'; return; }
-  const scheda = t => `<div class="giorno"><h2>${nomeGiorno(t.data)}</h2>
-    <div class="pisc"><b>${esc(t.piscina)}</b> <span class="ore">${hm(t.ora_inizio)}–${hm(t.ora_fine)}</span></div>
+  const scheda = t => `<div class="giorno ${t.annullato?'annullato':''}"><h2>${nomeGiorno(t.data)}</h2>
+    <div class="pisc"><b>${esc(t.piscina)}</b> <span class="ore">${hm(t.ora_inizio)}–${hm(t.ora_fine)}</span>${t.annullato?`<span class="annullo">ANNULLATO${t.motivo?' · '+esc(t.motivo):''}</span>`:''}</div>
     <div class="squadra">${t.squadra.map(x=>`<div class="${x.id===S.io.id?'io':''}"><span class="tag ${x.ruolo}">${x.ruolo==='F'?'FOTO':'STAMPA'}</span>${esc(x.nome)}${x.id===S.io.id?' (tu)':''}</div>`).join('') || 'Squadra non ancora definita'}</div></div>`;
   m.innerHTML = `<p class="intro"><b>I tuoi turni</b></p>${miei.length?miei.map(scheda).join(''):'<div class="vuoto" style="margin-bottom:16px">Per ora non sei in nessun turno.</div>'}
     <p class="intro" style="margin-top:22px"><b>Tutti i turni</b></p>${pub.map(scheda).join('')}`;
