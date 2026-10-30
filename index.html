@@ -183,6 +183,9 @@ function errore(e){
 }
 const collabById = id => S.collab.find(c=>c.id===id);
 const piscinaById = id => S.piscine.find(p=>p.id===id);
+// colore della sede nel calendario dei ragazzi (stessa regola di calendario.html)
+const PALETTE=['#EB0089','#1E6FD9','#E07B00','#2E9D5B','#7B3FC4','#00A3A3','#C8333A','#6B6C70'];
+function coloreSede(p){ if(p && p.colore) return p.colore; if(!p){ const usati=S.piscine.map(x=>x.colore); const libero=PALETTE.find(c=>!usati.includes(c)); if(libero) return libero; } let h=0; for(const ch of String(p?.id||'')) h=(h*31+ch.charCodeAt(0))>>>0; return PALETTE[h%PALETTE.length]; }
 
 function minuti(s){ const [h,m]=hm(s).split(':').map(Number); return h*60+(m||0); }
 // fascia di un turno: decide l'orario di inizio (prima delle 13 = mattina, dalle 13 = sera); oltre 8 ore li chiede tutti e due
@@ -670,7 +673,7 @@ async function formLinkIncassi(id, rigenera){
 
 function formLinkCalendario(){
   const url=new URL('calendario.html', location.href).href;
-  const testo='Ciao! Qui trovi i turni: candidati a quelli che puoi fare e controlla la tua squadra. '+url;
+  const testo='Ciao! Qui trovi il calendario dei turni: tocca quelli che puoi fare per candidarti e controlla la tua squadra. '+url;
   apriDialog('Link calendario', `
     <p style="margin:0 0 10px">Lo stesso link per tutti i collaboratori. Al primo accesso scelgono il proprio nome e il telefono se lo ricorda.</p>
     <p class="note" style="word-break:break-all;margin:0 0 12px">${esc(url)}</p>
@@ -859,7 +862,7 @@ function vistaPiscine(){
   let h='<div class="barra"><span class="spazio"></span><button class="btn pri" onclick="formPiscina()">Nuova sede</button></div>';
   if(!S.piscine.length) h+='<div class="vuoto">Nessuna sede. Aggiungi la prima.</div>';
   h+='<div class="lista">'+S.piscine.map(p=>`<div class="riga ${p.attiva?'':'off'}">
-    <b>${esc(p.nome)}</b>${puntini(p.importanza)}
+    <span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${coloreSede(p)}" title="Colore nel calendario"></span><b>${esc(p.nome)}</b>${puntini(p.importanza)}
     ${p.attiva?'':'<span class="tag">non attiva</span>'}
     <span class="info">${[p.indirizzo,p.contatto].filter(Boolean).map(esc).join(', ')}</span>
     <button class="btn pic" onclick="formPiscina('${p.id}')">Modifica</button></div>`).join('')+'</div>';
@@ -870,6 +873,7 @@ function formPiscina(id){
   apriDialog(p?'Modifica sede':'Nuova sede', `
     <label class="campo"><span>Nome</span><input name="nome" value="${esc(p?.nome)}" required></label>
     <label class="campo"><span>Importanza (1–5)</span><select name="importanza">${[1,2,3,4,5].map(n=>`<option ${(p?p.importanza:3)===n?'selected':''}>${n}</option>`).join('')}</select></label>
+    <label class="campo"><span>Colore nel calendario dei ragazzi</span><input type="color" name="colore" value="${coloreSede(p)}" style="height:40px;padding:2px"></label>
     <label class="campo"><span>Indirizzo</span><input name="indirizzo" value="${esc(p?.indirizzo)}"></label>
     <label class="campo"><span>Referente e contatto</span><input name="contatto" value="${esc(p?.contatto)}"></label>
     <label class="campo"><span>Note</span><textarea name="note" rows="2">${esc(p?.note)}</textarea></label>
@@ -877,7 +881,7 @@ function formPiscina(id){
     ${p?`<button type="button" class="btn pic del" onclick="eliminaPiscina('${p.id}')">Elimina sede</button>`:''}`,
   async f=>{
     const rec={ nome:f.nome.value.trim().replace(/\s+/g,' '), importanza:+f.importanza.value, indirizzo:f.indirizzo.value.trim()||null,
-      contatto:f.contatto.value.trim()||null, note:f.note.value.trim()||null, attiva:f.attiva.checked };
+      contatto:f.contatto.value.trim()||null, note:f.note.value.trim()||null, attiva:f.attiva.checked, colore:f.colore.value };
     const r = p ? await sb.from('tp_piscine').update(rec).eq('id',p.id) : await sb.from('tp_piscine').insert(rec);
     if(errore(r.error)) return false;
     toast('Sede salvata.'); await caricaTutto();

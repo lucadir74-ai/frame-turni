@@ -76,6 +76,35 @@ main{max-width:640px;margin:0 auto;padding:16px}
 .velo .box{background:#fff;border-radius:14px;padding:20px;max-width:420px;width:100%}
 .velo h2{font:700 1.2rem var(--fc);margin:0 0 8px}
 .velo p{margin:0 0 14px}
+.mesebar{display:flex;align-items:center;gap:10px;margin:0 0 10px}
+.mesebar h2{flex:1;text-align:center;font:700 1.15rem var(--fc);margin:0;text-transform:capitalize}
+.mesebar button{border:1px solid var(--line);background:var(--card);border-radius:8px;width:40px;height:36px;font-size:1.1rem}
+.mesebar button:disabled{opacity:.3}
+.legenda{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:.85rem;margin:0 0 10px}
+.legenda span{display:inline-flex;align-items:center;gap:6px}
+.legenda i{width:12px;height:12px;border-radius:50%;display:inline-block}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.cal .wd{text-align:center;font:600 .72rem var(--fc);color:var(--muted);padding:2px 0}
+.cal .gg{background:var(--card);border:1px solid var(--line);border-radius:8px;min-height:62px;padding:2px;display:flex;flex-direction:column;gap:2px}
+.cal .gg.vuoto{background:transparent;border-color:transparent}
+.cal .gg.off{background:#F8F8F9}
+.cal .gg.oggi{border-color:var(--ink)}
+.cal .num{border:0;background:none;padding:1px 2px;text-align:left;font:600 .78rem var(--fc);color:var(--ink)}
+.cal .gg.off .num{color:#B5B6B9}
+.pills{display:grid;grid-template-columns:1fr 1fr;gap:2px}
+.pill{border:2px solid var(--c);background:#fff;color:var(--c);border-radius:6px;height:22px;padding:0;font:700 .72rem var(--fc);line-height:1}
+.pill.si{background:var(--c);color:#fff}
+.pill.ann{border-style:dashed;opacity:.45;text-decoration:line-through}
+.pill.piu{border-color:var(--line);color:var(--muted)}
+.btnblocco{width:100%;background:var(--card);border:1px solid var(--water);color:var(--water);border-radius:10px;padding:11px;font-weight:600;margin:12px 0 4px}
+.velo .box.foglio{max-height:85vh;overflow:auto}
+.velo .box .giorno{margin-bottom:8px}
+.velo .box .giorno h2{display:none}
+.blocco label{display:block;margin-bottom:12px}
+.blocco select,.blocco input{width:100%;border:1px solid var(--line);border-radius:8px;padding:9px;font:inherit;background:#fff;margin-top:4px}
+.blocco .dueb{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.blocco .dueb label,.blocco .dueb input{min-width:0}
+.blocco input[type=date]{font-size:.92rem;padding:9px 6px}
 #toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:8px;display:none;z-index:9;max-width:92vw}
 #toast.err{background:var(--red)}
 </style>
@@ -85,7 +114,7 @@ main{max-width:640px;margin:0 auto;padding:16px}
 <div id="toast" role="status"></div>
 <script>
 const CHIAVE_NOME = 'frame_turni_io';
-let sb=null; const S={ staff:[], turni:[], io:null, vista:'tutti', sede:null };
+let sb=null; const S={ staff:[], turni:[], io:null, vista:'cal', sede:null, mese:null, giorno:null };
 
 function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function hm(t){ return (t||'').slice(0,5); }
@@ -154,9 +183,9 @@ async function ricarica(){
 function disegna(){
   document.getElementById('app').innerHTML = `<header>
     <div class="top"><img class="logo" src="logo-bianco.png" alt="Frame About You"><h1>Ciao ${esc(S.io.nome)}</h1><button onclick="cambiaNome()">Non sei tu?</button></div>
-    <div class="seg"><button aria-current="${S.vista!=='miei'}" onclick="vai('tutti')">Turni</button><button aria-current="${S.vista==='miei'}" onclick="vai('miei')">I miei turni</button></div>
+    <div class="seg"><button aria-current="${S.vista!=='miei'}" onclick="vai('cal')">Calendario</button><button aria-current="${S.vista==='miei'}" onclick="vai('miei')">I miei turni</button></div>
     <div class="corsia"></div></header><main id="main"></main>`;
-  vistaTurni();
+  S.vista==='miei' ? vistaTurni() : vistaCal();
 }
 function vai(v){ S.vista=v; disegna(); window.scrollTo(0,0); }
 function filtraSede(v){ S.sede=v; vistaTurni(); }
@@ -212,12 +241,102 @@ function scheda(t){
   </div>`;
 }
 
-async function candida(id,si){
+// ================= CALENDARIO =================
+const PALETTE=['#EB0089','#1E6FD9','#E07B00','#2E9D5B','#7B3FC4','#00A3A3','#C8333A','#6B6C70'];
+function coloreT(t){ if(t.colore) return t.colore; let h=0; for(const ch of String(t.piscina_id||t.piscina)) h=(h*31+ch.charCodeAt(0))>>>0; return PALETTE[h%PALETTE.length]; }
+function oggiStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function aggiorna(){ if(S.vista==='miei') vistaTurni(); else { vistaCal(); if(S.giorno) apriGiorno(S.giorno,true); } }
+function sovrapposti(t){ if(!t) return []; return S.turni.filter(x=>x.id!==t.id && x.data===t.data && !x.annullato && x.candidati.some(c=>c.id===S.io.id)
+  && hm(x.ora_inizio)<hm(t.ora_fine) && hm(t.ora_inizio)<hm(x.ora_fine)); }
+function mesiConTurni(){ return [...new Set(S.turni.map(t=>t.data.slice(0,7)))].sort(); }
+function cambiaMeseCal(n){ const [y,m]=S.mese.split('-').map(Number); const d=new Date(y,m-1+n,1); S.mese=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); vistaCal(); }
+
+function vistaCal(){
+  const m=document.getElementById('main');
+  const mesi=mesiConTurni();
+  if(!mesi.length){ m.innerHTML='<div class="vuoto">Al momento non ci sono turni in programma.</div>'; return; }
+  if(!S.mese){ const o=oggiStr().slice(0,7); S.mese = mesi.includes(o) ? o : mesi[0]; }
+  const [y,mm]=S.mese.split('-').map(Number);
+  const nomeM=new Date(y,mm-1,1).toLocaleDateString('it-IT',{month:'long',year:'numeric'});
+  const sedi=[]; S.turni.filter(t=>t.data.slice(0,7)===S.mese).forEach(t=>{ if(!sedi.some(x=>x.n===t.piscina)) sedi.push({n:t.piscina,c:coloreT(t)}); });
+  let h=`<div class="mesebar"><button onclick="cambiaMeseCal(-1)" ${S.mese<=mesi[0]?'disabled':''} aria-label="Mese precedente">‹</button><h2>${nomeM}</h2><button onclick="cambiaMeseCal(1)" ${S.mese>=mesi[mesi.length-1]?'disabled':''} aria-label="Mese successivo">›</button></div>`;
+  h+='<div class="legenda">'+sedi.map(x=>`<span><i style="background:${x.c}"></i>${esc(x.n)}</span>`).join('')+'<span style="color:var(--muted)">M = mattina · P = pomeriggio</span></div>';
+  h+='<div class="cal">'+['L','M','M','G','V','S','D'].map(x=>`<div class="wd">${x}</div>`).join('');
+  const primo=new Date(y,mm-1,1), ult=new Date(y,mm,0).getDate(), vuoti=(primo.getDay()+6)%7, oggi=oggiStr();
+  for(let i=0;i<vuoti;i++) h+='<div class="gg vuoto"></div>';
+  for(let g=1; g<=ult; g++){
+    const d=S.mese+'-'+String(g).padStart(2,'0');
+    const tg=S.turni.filter(t=>t.data===d).sort((a,b)=>a.piscina.localeCompare(b.piscina)||hm(a.ora_inizio).localeCompare(hm(b.ora_inizio)));
+    const mostra=tg.length>4?tg.slice(0,3):tg;
+    h+=`<div class="gg ${tg.length?'':'off'} ${d===oggi?'oggi':''}"><button class="num" onclick="apriGiorno('${d}')" ${tg.length?'':'disabled'}>${g}</button><div class="pills">`
+      + mostra.map(t=>{ const si=mio(t), sq=inSquadra(t);
+          const lett=hm(t.ora_inizio)<'13:00'?'M':'P';
+          return `<button class="pill ${t.annullato?'ann':''} ${si?'si':''}" style="--c:${coloreT(t)}" title="${esc(t.piscina)} ${hm(t.ora_inizio)}–${hm(t.ora_fine)}" onclick="tocco('${t.id}')">${sq?'★':si?'✓':lett}</button>`; }).join('')
+      + (tg.length>4?`<button class="pill piu" onclick="apriGiorno('${d}')">+${tg.length-3}</button>`:'')
+      + '</div></div>';
+  }
+  h+='</div><button class="btnblocco" onclick="formBlocco()">Candidati a più giorni</button>'
+    +'<p class="intro" style="margin-top:8px;font-size:.88rem">Tocca M o P per candidarti (diventa pieno ✓), ritocca per toglierti. Tocca il numero del giorno per vedere orari, candidati e squadra. ★ = sei in squadra.</p>';
+  m.innerHTML=h;
+}
+
+async function tocco(id){
   const t=S.turni.find(x=>x.id===id);
-  if(!si && !confirm('Vuoi ritirarti dal turno '+descrTurno(t)+'?')) return;
+  if(t.annullato){ toast('Turno annullato'+(t.motivo?' ('+t.motivo+')':'')+'.'); return; }
+  if(!mio(t)) return candida(id,true);
+  if(oreAlTurno(t)<=48 || inSquadra(t)) return apriGiorno(t.data);   // ritiro con avviso: si passa dal dettaglio
+  return candida(id,false,true);
+}
+
+function apriGiorno(d,riapri){
+  S.giorno=d;
+  document.querySelectorAll('.velo.dett').forEach(x=>x.remove());
+  const tg=S.turni.filter(t=>t.data===d).sort((a,b)=>a.piscina.localeCompare(b.piscina)||hm(a.ora_inizio).localeCompare(hm(b.ora_inizio)));
+  const v=document.createElement('div'); v.className='velo dett';
+  v.onclick=e=>{ if(e.target===v){ v.remove(); S.giorno=null; } };
+  v.innerHTML=`<div class="box foglio"><h2 style="text-transform:capitalize">${nomeGiorno(d)}</h2>${tg.map(t=>scheda(t).replace('<div class="giorno', `<div style="border-left:6px solid ${coloreT(t)}" class="giorno`)).join('')}<button class="btnsec" onclick="this.closest('.velo').remove();S.giorno=null">Chiudi</button></div>`;
+  document.body.appendChild(v);
+}
+
+function formBlocco(){
+  const [y,mm]=S.mese.split('-').map(Number);
+  const da=[S.mese+'-01',oggiStr()].sort()[1], a=S.mese+'-'+String(new Date(y,mm,0).getDate()).padStart(2,'0');
+  const sedi=[...new Set(S.turni.map(t=>t.piscina))].sort();
+  const v=document.createElement('div'); v.className='velo dett';
+  v.innerHTML=`<form class="box foglio blocco" onsubmit="inviaBlocco(event)"><h2>Candidati a più giorni</h2>
+    <label>Sede<select name="sede">${sedi.map(n=>`<option>${esc(n)}</option>`).join('')}</select></label>
+    <label>Giorni<select name="giorni"><option value="tutti">Tutti i giorni</option><option value="we">Sabati e domeniche</option><option value="fer">Dal lunedì al venerdì</option></select></label>
+    <label>Fasce<select name="fasce"><option value="MP">Mattina e pomeriggio</option><option value="M">Solo mattina</option><option value="P">Solo pomeriggio</option></select></label>
+    <div class="dueb"><label>Dal<input type="date" name="da" value="${da}"></label><label>Al<input type="date" name="a" value="${a}"></label></div>
+    <button class="btnpri" type="submit">Continua</button>
+    <button class="btnsec" type="button" onclick="this.closest('.velo').remove()">Annulla</button></form>`;
+  document.body.appendChild(v);
+}
+async function inviaBlocco(ev){
+  ev.preventDefault(); const f=ev.target;
+  const giorni=f.giorni.value, fasce=f.fasce.value, oggi=oggiStr();
+  const scelti=S.turni.filter(t=>{
+    if(t.piscina!==f.sede.value || t.annullato || t.data<oggi || t.data<f.da.value || t.data>f.a.value || mio(t)) return false;
+    const [y,m,g]=t.data.split('-').map(Number); const wd=new Date(y,m-1,g).getDay(); const we=wd===0||wd===6;
+    if(giorni==='we' && !we) return false; if(giorni==='fer' && we) return false;
+    return fasce.includes(hm(t.ora_inizio)<'13:00'?'M':'P');
+  });
+  if(!scelti.length){ toast('Nessun turno nuovo con queste scelte.',true); return; }
+  const descr={tutti:'tutti i giorni',we:'sabati e domeniche',fer:'dal lunedì al venerdì'}[giorni]+', '+{MP:'mattina e pomeriggio',M:'solo mattina',P:'solo pomeriggio'}[fasce];
+  if(!confirm('Ti candidi a '+scelti.length+' turni di '+f.sede.value+' ('+descr+'). Confermi?')) return;
+  const { data, error } = await sb.rpc('tp_pub_candida_molti', { p_collab:S.io.id, p_turni:scelti.map(t=>t.id) });
+  if(error){ toast(error.message||'Non salvato, riprova.',true); return; }
+  f.closest('.velo').remove(); await ricarica(); aggiorna();
+  toast('Candidature inviate: '+data+'.');
+}
+
+async function candida(id,si,veloce){
+  const t=S.turni.find(x=>x.id===id);
+  if(!si && !veloce && !confirm('Vuoi ritirarti dal turno '+descrTurno(t)+'?')) return;
   const { data, error } = await sb.rpc('tp_pub_candidatura', { p_collab:S.io.id, p_turno:id, p_si:si });
-  if(error){ toast(error.message||'Non salvato, riprova.',true); await ricarica(); vistaTurni(); return; }
-  const y=window.scrollY; await ricarica(); vistaTurni(); window.scrollTo(0,y);
+  if(error){ toast(error.message||'Non salvato, riprova.',true); await ricarica(); aggiorna(); return; }
+  const y=window.scrollY; await ricarica(); aggiorna(); window.scrollTo(0,y);
+  if(si){ const s=sovrapposti(S.turni.find(x=>x.id===id)); if(s.length){ toast('Attenzione: sei candidato anche a '+s.map(x=>x.piscina+' '+hm(x.ora_inizio)+'–'+hm(x.ora_fine)).join(', ')+' alla stessa ora.',true); return; } }
   if(si) toast('Candidatura inviata.');
   else if(data && data.era_in_squadra) avvisoRitiro(t);
   else toast('Candidatura ritirata.');
