@@ -259,7 +259,7 @@ async function caricaMese(){
   S.ritiri = rt.error ? [] : rt.data;
   if(S.turni.length){
     const ids=S.turni.map(x=>x.id);
-    const [r,i,sp,kc] = await Promise.all([
+    const [r,kc,i,sp] = await Promise.all([
       sb.from('tp_assegnazioni').select('*').in('turno_id', ids),
       sb.from('tp_candidature').select('*').in('turno_id', ids),
       sb.from('tp_incassi').select('*').in('turno_id', ids),
