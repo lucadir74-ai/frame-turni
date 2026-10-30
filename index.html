@@ -289,7 +289,16 @@ function disegna(){
   <main id="main"></main>`;
   ({turni:vistaTurni, disponibilita:vistaDisp, collaboratori:vistaCollab, piscine:vistaPiscine, riepilogo:vistaRiepilogo})[S.tab]();
 }
-function vai(k){ S.tab=k; disegna(); }
+// cambiando scheda rilegge i dati, così si vedono subito le candidature fatte dai ragazzi
+async function vai(k){ S.tab=k; if(k==='turni'||k==='disponibilita'){ await caricaMese(); } disegna(); }
+// tornando sulla pagina (es. dopo aver usato il telefono) aggiorna da sola
+document.addEventListener('visibilitychange', async ()=>{
+  if(document.visibilityState!=='visible' || !S.me || document.querySelector('dialog[open]')) return;
+  if(S.tab!=='turni' && S.tab!=='disponibilita') return;
+  const g=document.querySelector('.griglia'), sx=g?g.scrollLeft:0, y=window.scrollY;
+  await caricaMese(); disegna();
+  const g2=document.querySelector('.griglia'); if(g2) g2.scrollLeft=sx; window.scrollTo(0,y);
+});
 async function cambiaMese(n){ S.mese=spostaMese(S.mese,n); await ricarica(); }
 function barraMese(extra){
   return `<div class="barra"><button class="btn pic" onclick="cambiaMese(-1)" aria-label="Mese precedente">‹</button><span class="mese">${nomeMese(S.mese)}</span><button class="btn pic" onclick="cambiaMese(1)" aria-label="Mese successivo">›</button><span class="spazio"></span>${extra||''}</div>`;
