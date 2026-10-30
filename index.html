@@ -362,6 +362,18 @@ function formTurno(id){
   const [da,a]=limitiMese(S.mese); const o=oggi();
   const dataDef = t ? t.data : (o>=da&&o<=a ? o : da);
   const opz = S.piscine.filter(p=>p.attiva || (t&&p.id===t.piscina_id)).map(p=>`<option value="${p.id}" ${t&&t.piscina_id===p.id?'selected':''}>${esc(p.nome)}</option>`).join('');
+  const orari = t ? `<div class="due">
+      <label class="campo"><span>Inizio</span><input type="time" name="ora_inizio" value="${hm(t.ora_inizio)}" required></label>
+      <label class="campo"><span>Fine</span><input type="time" name="ora_fine" value="${hm(t.ora_fine)}" required></label></div>`
+    : `<p class="note" style="margin:0 0 6px"><b>Mattina</b></p>
+    <div class="due">
+      <label class="campo"><span>Inizio</span><input type="time" name="m_inizio" value="09:00"></label>
+      <label class="campo"><span>Fine</span><input type="time" name="m_fine" value="13:00"></label></div>
+    <p class="note" style="margin:0 0 6px"><b>Pomeriggio</b> (facoltativo)</p>
+    <div class="due">
+      <label class="campo"><span>Inizio</span><input type="time" name="p_inizio"></label>
+      <label class="campo"><span>Fine</span><input type="time" name="p_fine"></label></div>
+    <p class="note" style="margin:-4px 0 12px">Compilando mattina e pomeriggio si creano due turni per ogni giorno, così i ragazzi possono candidarsi a una sola metà o a tutte e due. Lascia vuota una delle due se serve un turno solo.</p>`;
   apriDialog(t?'Modifica turno':'Nuovo turno', `
     <label class="campo"><span>Sede</span><select name="piscina_id" required>${opz}</select></label>
     ${t?`<label class="campo"><span>Data</span><input type="date" name="data" value="${dataDef}" required></label>`
@@ -369,40 +381,52 @@ function formTurno(id){
       <label class="campo"><span>Data (o primo giorno)</span><input type="date" name="data" value="${dataDef}" required></label>
       <label class="campo"><span>Fino al (facoltativo)</span><input type="date" name="data_fine"></label>
     </div>
-    <p class="note" style="margin:-4px 0 12px">Con “Fino al” si crea lo stesso turno per ogni giorno, dal primo all’ultimo compresi. I giorni di chiusura poi si eliminano uno per uno.</p>`}
+    <p class="note" style="margin:-4px 0 12px">Con “Fino al” si creano i turni per ogni giorno, dal primo all’ultimo compresi. I giorni di chiusura poi si eliminano uno per uno.</p>`}
+    ${orari}
     <div class="due">
-      <label class="campo"><span>Inizio</span><input type="time" name="ora_inizio" value="${t?hm(t.ora_inizio):'09:00'}" required></label>
-      <label class="campo"><span>Fine</span><input type="time" name="ora_fine" value="${t?hm(t.ora_fine):'13:00'}" required></label>
       <label class="campo"><span>Fotografi richiesti</span><input type="number" min="0" max="9" name="fotografi" value="${t?t.fotografi:1}" required></label>
       <label class="campo"><span>Stampatori richiesti</span><input type="number" min="0" max="9" name="stampatori" value="${t?t.stampatori:1}" required></label>
     </div>
     <label class="campo"><span>Note</span><textarea name="note" rows="2">${esc(t?.note)}</textarea></label>`,
   async f=>{
-    const rec={ piscina_id:f.piscina_id.value, data:f.data.value, ora_inizio:f.ora_inizio.value, ora_fine:f.ora_fine.value,
-      fotografi:+f.fotografi.value, stampatori:+f.stampatori.value, note:f.note.value.trim()||null };
-    if(rec.ora_fine<=rec.ora_inizio){ toast('L\'ora di fine deve essere dopo l\'inizio.',true); return false; }
-    const fine = !t && f.data_fine.value ? f.data_fine.value : null;
-    if(fine){
-      if(fine<rec.data){ toast('“Fino al” deve essere dopo il primo giorno.',true); return false; }
-      const date=[]; const d=new Date(rec.data+'T12:00:00Z');
-      while(d.toISOString().slice(0,10)<=fine){ date.push(d.toISOString().slice(0,10)); d.setUTCDate(d.getUTCDate()+1); }
-      if(date.length>62){ toast('Massimo 62 giorni alla volta.',true); return false; }
-      // salta i giorni in cui questo turno (stessa sede e ora di inizio) esiste già
-      const es = await sb.from('tp_turni').select('data,ora_inizio').eq('piscina_id',rec.piscina_id).gte('data',rec.data).lte('data',fine);
-      if(errore(es.error)) return false;
-      const gia=new Set((es.data||[]).filter(x=>hm(x.ora_inizio)===rec.ora_inizio).map(x=>x.data));
-      const nuovi=date.filter(x=>!gia.has(x)).map(x=>({...rec, data:x}));
-      if(!nuovi.length){ toast('Questi turni esistono già tutti.',true); return false; }
-      if(!confirm('Creo '+nuovi.length+' turni, dal '+nuovi[0].data.split('-').reverse().join('/')+' al '+nuovi[nuovi.length-1].data.split('-').reverse().join('/')+(gia.size?' (salto '+gia.size+' giorni già presenti)':'')+'. Procedo?')) return false;
-      if(errore((await sb.from('tp_turni').insert(nuovi)).error)) return false;
+    const base={ piscina_id:f.piscina_id.value, fotografi:+f.fotografi.value, stampatori:+f.stampatori.value, note:f.note.value.trim()||null };
+    if(t){
+      const rec={...base, data:f.data.value, ora_inizio:f.ora_inizio.value, ora_fine:f.ora_fine.value};
+      if(rec.ora_fine<=rec.ora_inizio){ toast('L\'ora di fine deve essere dopo l\'inizio.',true); return false; }
+      if(errore((await sb.from('tp_turni').update(rec).eq('id',t.id)).error)) return false;
       if(rec.data.slice(0,7)!==S.mese) S.mese=rec.data.slice(0,7);
-      toast(nuovi.length+' turni creati.'); await ricarica(); return;
+      toast('Turno salvato.'); await ricarica(); return;
     }
-    const r = t ? await sb.from('tp_turni').update(rec).eq('id',t.id) : await sb.from('tp_turni').insert(rec);
-    if(errore(r.error)) return false;
-    if(rec.data.slice(0,7)!==S.mese) S.mese=rec.data.slice(0,7);
-    toast(t?'Turno salvato.':'Turno creato.'); await ricarica();
-  }, t?'Salva turno':'Crea turno');
+    // fasce compilate (mattina e/o pomeriggio)
+    const fasce=[];
+    for(const [i,e,nome] of [[f.m_inizio.value,f.m_fine.value,'mattina'],[f.p_inizio.value,f.p_fine.value,'pomeriggio']]){
+      if(!i && !e) continue;
+      if(!i || !e){ toast('Completa inizio e fine del '+nome+'.',true); return false; }
+      if(e<=i){ toast('Nel '+nome+' l\'ora di fine deve essere dopo l\'inizio.',true); return false; }
+      fasce.push([i,e]);
+    }
+    if(!fasce.length){ toast('Inserisci almeno gli orari della mattina o del pomeriggio.',true); return false; }
+    if(fasce.length===2 && fasce[1][0]<fasce[0][1]){ toast('Il pomeriggio deve iniziare dopo la fine della mattina.',true); return false; }
+    const primo=f.data.value, fine=f.data_fine.value||primo;
+    if(fine<primo){ toast('“Fino al” deve essere dopo il primo giorno.',true); return false; }
+    const date=[]; const d=new Date(primo+'T12:00:00Z');
+    while(d.toISOString().slice(0,10)<=fine){ date.push(d.toISOString().slice(0,10)); d.setUTCDate(d.getUTCDate()+1); }
+    if(date.length>62){ toast('Massimo 62 giorni alla volta.',true); return false; }
+    // salta i turni che esistono già (stessa sede, giorno e ora di inizio)
+    const es = await sb.from('tp_turni').select('data,ora_inizio').eq('piscina_id',base.piscina_id).gte('data',primo).lte('data',fine);
+    if(errore(es.error)) return false;
+    const gia=new Set((es.data||[]).map(x=>x.data+'|'+hm(x.ora_inizio)));
+    const tutti=[]; date.forEach(x=>fasce.forEach(([i,e])=>tutti.push({...base, data:x, ora_inizio:i, ora_fine:e})));
+    const nuovi=tutti.filter(r=>!gia.has(r.data+'|'+r.ora_inizio)), saltati=tutti.length-nuovi.length;
+    if(!nuovi.length){ toast('Questi turni esistono già tutti.',true); return false; }
+    if(nuovi.length>1){
+      const it=x=>x.split('-').reverse().join('/');
+      if(!confirm('Creo '+nuovi.length+' turni ('+fasce.map(([i,e])=>i+'–'+e).join(' e ')+'), dal '+it(primo)+' al '+it(fine)+(saltati?' (salto '+saltati+' turni già presenti)':'')+'. Procedo?')) return false;
+    }
+    if(errore((await sb.from('tp_turni').insert(nuovi)).error)) return false;
+    if(primo.slice(0,7)!==S.mese) S.mese=primo.slice(0,7);
+    toast(nuovi.length===1?'Turno creato.':nuovi.length+' turni creati.'); await ricarica();
+  }, t?'Salva turno':'Crea turni');
 }
 
 async function eliminaTurno(id){
