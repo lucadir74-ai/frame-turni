@@ -61,6 +61,21 @@ main{max-width:640px;margin:0 auto;padding:16px}
 .btnpri{width:100%;background:var(--water);color:#fff;border:0;border-radius:10px;padding:13px;font-weight:600;font-size:1.05rem}
 .btnsec{width:100%;background:none;border:1px dashed var(--water);color:var(--water);border-radius:10px;padding:13px;font-weight:600;margin-top:14px}
 .privacy{font-size:.82rem;color:var(--muted);margin:4px 0 14px}
+.sett{font:600 .85rem var(--fc);color:var(--muted);margin:20px 0 8px;text-transform:none}
+.sedi{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 6px}
+.sedi button{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:99px;padding:6px 14px;font-weight:600}
+.sedi button[aria-current=true]{background:var(--water);border-color:var(--water);color:#fff}
+.giorno.mio{border-color:var(--water);box-shadow:inset 4px 0 0 var(--water)}
+.az{margin-top:12px}
+.az .btnpri{padding:10px}
+.az .btnsec{padding:10px}
+.stato-io{font-weight:700;color:var(--ok)}
+.note48{font-size:.88rem;color:var(--muted);margin:6px 0 8px}
+.btnwa{display:block;text-align:center;background:#1F8F4E;color:#fff;border-radius:10px;padding:11px;font-weight:600;text-decoration:none}
+.velo{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:20px;z-index:20}
+.velo .box{background:#fff;border-radius:14px;padding:20px;max-width:420px;width:100%}
+.velo h2{font:700 1.2rem var(--fc);margin:0 0 8px}
+.velo p{margin:0 0 14px}
 #toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:8px;display:none;z-index:9;max-width:92vw}
 #toast.err{background:var(--red)}
 </style>
@@ -70,14 +85,12 @@ main{max-width:640px;margin:0 auto;padding:16px}
 <div id="toast" role="status"></div>
 <script>
 const CHIAVE_NOME = 'frame_turni_io';
-let sb=null; const S={ staff:[], turni:[], disp:new Set(), io:null, vista:'disp' };
+let sb=null; const S={ staff:[], turni:[], io:null, vista:'tutti', sede:null };
 
 function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function hm(t){ return (t||'').slice(0,5); }
 function nomeGiorno(d){ const [y,m,g]=d.split('-').map(Number); return new Date(y,m-1,g).toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long'}); }
 function minuti(s){ const [h,m]=hm(s).split(':').map(Number); return h*60+(m||0); }
-// fascia di un turno: decide l'orario di inizio (prima delle 13 = mattina, dalle 13 = sera); oltre 8 ore li chiede tutti e due
-function fasceTurno(t){ if(minuti(t.ora_fine)-minuti(t.ora_inizio)>480) return ['M','P']; return [hm(t.ora_inizio)<'13:00'?'M':'P']; }
 function toast(m,err){ const t=document.getElementById('toast'); t.textContent=m; t.className=err?'err':''; t.style.display='block'; clearTimeout(toast._t); toast._t=setTimeout(()=>t.style.display='none', err?5000:1800); }
 function leggiIo(){ try{ return localStorage.getItem(CHIAVE_NOME); }catch(e){ return null; } }
 function scriviIo(v){ try{ v ? localStorage.setItem(CHIAVE_NOME,v) : localStorage.removeItem(CHIAVE_NOME); }catch(e){} }
@@ -93,7 +106,7 @@ async function avvio(){
   const salvato=leggiIo();
   S.io = S.staff.find(c=>c.id===salvato) || null;
   if(!S.io) return sceltaNome();
-  await caricaDisp(); disegna();
+  disegna();
 }
 
 function sceltaNome(){
@@ -129,58 +142,92 @@ async function inviaIscrizione(ev){
   toast(data.esistente ? 'Eri già in elenco come '+data.nome+'.' : 'Iscrizione fatta!');
   await scegli(data.id);
 }
-async function scegli(id){ S.io=S.staff.find(c=>c.id===id); scriviIo(id); await caricaDisp(); disegna(); }
-function cambiaNome(){ scriviIo(null); S.io=null; S.disp=new Set(); sceltaNome(); }
-
-async function caricaDisp(){
-  const { data, error } = await sb.rpc('tp_pub_disp', { p_collab:S.io.id });
-  if(error){ toast('Non riesco a leggere la tua disponibilità.',true); return; }
-  S.disp = new Set((data||[]).map(d=>d.data+'|'+d.fascia));
+const WA_ORG = '393351755398';   // WhatsApp di Betty per gli avvisi di ritiro
+async function scegli(id){ S.io=S.staff.find(c=>c.id===id); scriviIo(id); disegna(); }
+function cambiaNome(){ scriviIo(null); S.io=null; sceltaNome(); }
+async function ricarica(){
+  const { data, error } = await sb.rpc('tp_pub_calendario');
+  if(error){ toast('Non riesco ad aggiornare, riprova.',true); return; }
+  S.staff=data.staff||[]; S.turni=data.turni||[];
 }
 
 function disegna(){
   document.getElementById('app').innerHTML = `<header>
     <div class="top"><img class="logo" src="logo-bianco.png" alt="Frame About You"><h1>Ciao ${esc(S.io.nome)}</h1><button onclick="cambiaNome()">Non sei tu?</button></div>
-    <div class="seg"><button aria-current="${S.vista==='disp'}" onclick="vai('disp')">Disponibilità</button><button aria-current="${S.vista==='turni'}" onclick="vai('turni')">Turni</button></div>
+    <div class="seg"><button aria-current="${S.vista!=='miei'}" onclick="vai('tutti')">Turni</button><button aria-current="${S.vista==='miei'}" onclick="vai('miei')">I miei turni</button></div>
     <div class="corsia"></div></header><main id="main"></main>`;
-  S.vista==='disp' ? vistaDisp() : vistaTurni();
+  vistaTurni();
 }
-function vai(v){ S.vista=v; disegna(); }
+function vai(v){ S.vista=v; disegna(); window.scrollTo(0,0); }
+function filtraSede(v){ S.sede=v; vistaTurni(); }
 
-const attivi = () => S.turni.filter(t=>!t.annullato);
-function giorni(){ return [...new Set(attivi().map(t=>t.data))].sort(); }
-
-function vistaDisp(){
-  const m=document.getElementById('main'); const gg=giorni();
-  if(!gg.length){ m.innerHTML='<div class="vuoto">Al momento non ci sono date in programma.</div>'; return; }
-  m.innerHTML = '<p class="intro">Tocca Mattina e/o Sera nei giorni in cui puoi lavorare. Il verde vuol dire disponibile; ritocca per togliere.</p>' + gg.map(d=>{
-    const tg=attivi().filter(t=>t.data===d);
-    const f=new Set(); tg.forEach(t=>fasceTurno(t).forEach(x=>f.add(x)));
-    return `<div class="giorno"><h2>${nomeGiorno(d)}</h2>
-      ${tg.map(t=>`<div class="pisc"><b>${esc(t.piscina)}</b> <span class="ore">${hm(t.ora_inizio)}–${hm(t.ora_fine)}</span></div>`).join('')}
-      <div class="fasce">${['M','P'].filter(x=>f.has(x)).map(x=>{const si=S.disp.has(d+'|'+x);
-        return `<button class="${si?'si':''}" aria-pressed="${si}" onclick="tocca('${d}','${x}')">${x==='M'?'Mattina':'Sera'}<small>${si?'✓ disponibile':'non indicata'}</small></button>`}).join('')}</div>
-    </div>`;
-  }).join('');
-}
-
-async function tocca(d,f){
-  const k=d+'|'+f, si=!S.disp.has(k);
-  si ? S.disp.add(k) : S.disp.delete(k); vistaDisp();
-  const { error } = await sb.rpc('tp_pub_set_disp', { p_collab:S.io.id, p_data:d, p_fascia:f, p_si:si });
-  if(error){ si ? S.disp.delete(k) : S.disp.add(k); vistaDisp(); toast(error.message||'Non salvato, riprova.',true); }
-}
+const mio = t => t.candidati.some(x=>x.id===S.io.id) || t.squadra.some(x=>x.id===S.io.id);
+const inSquadra = t => t.squadra.some(x=>x.id===S.io.id);
+function oreAlTurno(t){ const [y,m,g]=t.data.split('-').map(Number); const [h,mi]=hm(t.ora_inizio).split(':').map(Number); return (new Date(y,m-1,g,h,mi)-Date.now())/3600000; }
+function lunedi(d){ const [y,m,g]=d.split('-').map(Number); const x=new Date(y,m-1,g); x.setDate(x.getDate()-((x.getDay()+6)%7)); return x; }
+function titoloSettimana(l){ const e=new Date(l); e.setDate(e.getDate()+6);
+  const f=(x,mese)=>x.toLocaleDateString('it-IT',mese?{day:'numeric',month:'long'}:{day:'numeric'});
+  return 'Settimana dal '+f(l,l.getMonth()!==e.getMonth())+' al '+f(e,true); }
+function descrTurno(t){ return t.piscina+', '+nomeGiorno(t.data)+', '+hm(t.ora_inizio)+'–'+hm(t.ora_fine); }
+function linkWa(testo){ return 'https://wa.me/'+WA_ORG+'?text='+encodeURIComponent(testo); }
+function posti(t){ const p=[]; if(t.fotografi) p.push(t.fotografi+' foto'); if(t.stampatori) p.push(t.stampatori+' stampa'); return p.join(' + ')||'—'; }
 
 function vistaTurni(){
   const m=document.getElementById('main');
-  const pub=S.turni.filter(t=>t.pubblicato);
-  const miei=pub.filter(t=>t.squadra.some(x=>x.id===S.io.id));
-  if(!pub.length){ m.innerHTML='<div class="vuoto">I turni non sono ancora stati pubblicati.</div>'; return; }
-  const scheda = t => `<div class="giorno ${t.annullato?'annullato':''}"><h2>${nomeGiorno(t.data)}</h2>
+  const sedi=[...new Set(S.turni.map(t=>t.piscina))].sort();
+  if(S.sede && !sedi.includes(S.sede)) S.sede=null;
+  let lista = S.turni.filter(t=> !S.sede || t.piscina===S.sede);
+  if(S.vista==='miei') lista=lista.filter(mio);
+  lista=[...lista].sort((x,y)=>x.data.localeCompare(y.data)||hm(x.ora_inizio).localeCompare(hm(y.ora_inizio)));
+  let h = S.vista==='miei'
+    ? '<p class="intro">I turni a cui ti sei candidato e quelli in cui sei in squadra.</p>'
+    : '<p class="intro">Tocca <b>Mi candido</b> sui turni che puoi fare. Ci si può candidare anche se ci sono già altri: la squadra la scelgono gli organizzatori e, quando è pubblicata, la trovi qui.</p>';
+  if(sedi.length>1) h+='<div class="sedi"><button aria-current="'+(!S.sede)+'" onclick="filtraSede(null)">Tutte</button>'+sedi.map(n=>`<button aria-current="${S.sede===n}" onclick='filtraSede(${JSON.stringify(n).replace(/'/g,"&#39;")})'>${esc(n)}</button>`).join('')+'</div>';
+  if(!lista.length){ m.innerHTML=h+'<div class="vuoto">'+(S.vista==='miei'?'Non ti sei ancora candidato a nessun turno.':'Al momento non ci sono turni in programma.')+'</div>'; return; }
+  let sett=null;
+  lista.forEach(t=>{
+    const l=lunedi(t.data).getTime();
+    if(l!==sett){ sett=l; h+=`<h3 class="sett">${titoloSettimana(new Date(l))}</h3>`; }
+    h+=scheda(t);
+  });
+  m.innerHTML=h;
+}
+
+function scheda(t){
+  const io=S.io.id, cand=t.candidati.some(x=>x.id===io), sq=inSquadra(t);
+  let azione='';
+  if(t.annullato) azione='';
+  else if(!cand && !sq) azione=`<button class="btnpri" onclick="candida('${t.id}',true)">Mi candido</button>`;
+  else if(oreAlTurno(t)>48) azione=`<div class="stato-io">✓ ${sq?'Sei in squadra':'Ti sei candidato'}</div><button class="btnsec" style="margin-top:8px" onclick="candida('${t.id}',false)">Ritirati</button>`;
+  else azione=`<div class="stato-io">✓ ${sq?'Sei in squadra':'Ti sei candidato'}</div><p class="note48">Mancano meno di 48 ore: per ritirarti avvisa Betty.</p>
+    <a class="btnwa" target="_blank" rel="noopener" href="${linkWa('Ciao Betty, sono '+S.io.nome+'. Non riesco a fare il turno '+descrTurno(t)+': puoi togliermi?')}">Scrivi a Betty su WhatsApp</a>`;
+  const nomi = arr => arr.map(x=>`<span class="${x.id===io?'io':''}">${esc(x.nome)}${x.id===io?' (tu)':''}</span>`).join(', ');
+  return `<div class="giorno ${t.annullato?'annullato':''} ${sq?'mio':''}">
+    <h2>${nomeGiorno(t.data)}</h2>
     <div class="pisc"><b>${esc(t.piscina)}</b> <span class="ore">${hm(t.ora_inizio)}–${hm(t.ora_fine)}</span>${t.annullato?`<span class="annullo">ANNULLATO${t.motivo?' · '+esc(t.motivo):''}</span>`:''}</div>
-    <div class="squadra">${t.squadra.map(x=>`<div class="${x.id===S.io.id?'io':''}"><span class="tag ${x.ruolo}">${x.ruolo==='F'?'FOTO':'STAMPA'}</span>${esc(x.nome)}${x.id===S.io.id?' (tu)':''}</div>`).join('') || 'Squadra non ancora definita'}</div></div>`;
-  m.innerHTML = `<p class="intro"><b>I tuoi turni</b></p>${miei.length?miei.map(scheda).join(''):'<div class="vuoto" style="margin-bottom:16px">Per ora non sei in nessun turno.</div>'}
-    <p class="intro" style="margin-top:22px"><b>Tutti i turni</b></p>${pub.map(scheda).join('')}`;
+    ${t.annullato?'':`<div class="squadra">Servono: ${posti(t)}</div>`}
+    ${t.pubblicato && t.squadra.length?`<div class="squadra"><b>Squadra:</b> ${t.squadra.map(x=>`<span class="${x.id===io?'io':''}"><span class="tag ${x.ruolo}">${x.ruolo==='F'?'FOTO':'STAMPA'}</span>${esc(x.nome)}${x.id===io?' (tu)':''}</span>`).join(' ')}</div>`:''}
+    ${t.annullato?'':`<div class="squadra">${t.candidati.length?`<b>Candidati (${t.candidati.length}):</b> ${nomi(t.candidati)}`:'Ancora nessun candidato'}</div>`}
+    ${azione?`<div class="az">${azione}</div>`:''}
+  </div>`;
+}
+
+async function candida(id,si){
+  const t=S.turni.find(x=>x.id===id);
+  if(!si && !confirm('Vuoi ritirarti dal turno '+descrTurno(t)+'?')) return;
+  const { data, error } = await sb.rpc('tp_pub_candidatura', { p_collab:S.io.id, p_turno:id, p_si:si });
+  if(error){ toast(error.message||'Non salvato, riprova.',true); await ricarica(); vistaTurni(); return; }
+  const y=window.scrollY; await ricarica(); vistaTurni(); window.scrollTo(0,y);
+  if(si) toast('Candidatura inviata.');
+  else if(data && data.era_in_squadra) avvisoRitiro(t);
+  else toast('Candidatura ritirata.');
+}
+function avvisoRitiro(t){
+  const d=document.createElement('div'); d.className='velo';
+  d.innerHTML=`<div class="box"><h2>Avvisa Betty</h2><p>Eri già in squadra per <b>${esc(descrTurno(t))}</b>. Il posto ora è scoperto: manda un messaggio a Betty così può sostituirti.</p>
+    <a class="btnwa" target="_blank" rel="noopener" href="${linkWa('Ciao Betty, sono '+S.io.nome+'. Mi sono ritirato/a dal turno '+descrTurno(t)+'.')}">Avvisa su WhatsApp</a>
+    <button class="btnsec" onclick="this.closest('.velo').remove()">Chiudi</button></div>`;
+  document.body.appendChild(d);
 }
 
 avvio();

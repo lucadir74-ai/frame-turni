@@ -62,6 +62,11 @@ main{max-width:1100px;margin:0 auto;padding:16px}
 .turno.annullato{border-left-color:var(--red);background:#FAFAFA}
 .turno.annullato .t-head b,.turno.annullato .t-ora{text-decoration:line-through;color:var(--muted)}
 .stato.ann{background:#FBE9EA;color:var(--red)}
+.ritiri{background:#FBE9EA;border:1px solid #F0C4C7;border-radius:10px;padding:10px 14px;margin:0 0 14px;color:var(--red)}
+.ritiri .rit{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:6px;color:var(--ink)}
+.griglia .fx button.sq{border-color:var(--water);background:var(--water);color:#fff}
+.griglia .pisc .pieno{color:var(--ok);font-weight:700}
+.griglia .pisc .manca{color:var(--warn);font-weight:700}
 .pres{font-size:.88rem;margin:6px 0 0}
 .pres.ok{color:var(--ok);font-weight:600}
 .pres.da{color:var(--warn);font-weight:600}
@@ -246,16 +251,19 @@ async function caricaMese(){
     sb.from('tp_disponibilita').select('*').gte('data',da).lte('data',a)
   ]);
   if(errore(t.error)||errore(d.error)) return;
-  S.turni=t.data; S.disp=d.data; S.ass=[]; S.incassi=[]; S.spese=[]; S.compensi=[];
+  S.turni=t.data; S.disp=d.data; S.ass=[]; S.incassi=[]; S.spese=[]; S.compensi=[]; S.cand=[];
+  const rt = await sb.from('tp_ritiri').select('*, tp_turni(data,ora_inizio,ora_fine,piscina_id)').eq('visto',false).order('creato');
+  S.ritiri = rt.error ? [] : rt.data;
   if(S.turni.length){
     const ids=S.turni.map(x=>x.id);
-    const [r,i,sp] = await Promise.all([
+    const [r,i,sp,kc] = await Promise.all([
       sb.from('tp_assegnazioni').select('*').in('turno_id', ids),
+      sb.from('tp_candidature').select('*').in('turno_id', ids),
       sb.from('tp_incassi').select('*').in('turno_id', ids),
       sb.from('tp_spese').select('*').in('turno_id', ids)
     ]);
-    if(errore(r.error)||errore(i.error)||errore(sp.error)) return;
-    S.ass=r.data; S.incassi=i.data; S.spese=sp.data; S.compensi=[];
+    if(errore(r.error)||errore(i.error)||errore(sp.error)||errore(kc.error)) return;
+    S.cand=kc.data; S.ass=r.data; S.incassi=i.data; S.spese=sp.data; S.compensi=[];
     if(S.ass.length){
       const k = await sb.from('tp_compensi').select('*').in('assegnazione_id', S.ass.map(x=>x.id));
       if(errore(k.error)) return; S.compensi=k.data;
@@ -268,7 +276,7 @@ async function ricarica(){ await caricaMese(); disegna(); }
 // ---------- struttura ----------
 function disegna(){
   const nNuovi=S.collab.filter(c=>c.nuovo).length;
-  const tabs=[['turni','Turni'],['disponibilita','Disponibilità'],['collaboratori','Collaboratori'+(nNuovi?' ('+nNuovi+' nuovi)':'')],['piscine','Sedi'],['riepilogo','Riepilogo']];
+  const tabs=[['turni','Turni'],['disponibilita','Candidature'],['collaboratori','Collaboratori'+(nNuovi?' ('+nNuovi+' nuovi)':'')],['piscine','Sedi'],['riepilogo','Riepilogo']];
   document.getElementById('app').innerHTML = `
   <header>
     <div class="top"><img class="logo" src="logo-bianco.png" alt="Frame About You"><h1>Turni</h1><span class="chi">${esc(S.me.nome)}</span><button onclick="esci()">Esci</button></div>
@@ -295,7 +303,7 @@ function analisiTurno(t){
     const c=collabById(a.collaboratore_id); if(!c) return;
     const st=statoPersona(c,t);
     if(st.conflitto) avvisi.push(c.nome+' è in un altro turno alla stessa ora');
-    else if(st.disp===false) avvisi.push(c.nome+' non ha dato disponibilità per questo orario');
+    else if(st.disp===false) avvisi.push(c.nome+' non si è candidato a questo turno');
   });
   return { ass, nF, nS, avvisi };
 }
@@ -304,6 +312,8 @@ function vistaTurni(){
   const m=document.getElementById('main');
   const bozze=S.turni.filter(t=>!t.pubblicato && !t.annullato).length;
   let h = barraMese(`<button class="btn" onclick="formLinkCalendario()">Link calendario</button><button class="btn" ${bozze?'':'disabled'} onclick="formProponi(false)">Proponi turni</button><button class="btn" ${bozze?'':'disabled'} onclick="pubblicaMese()">Pubblica ${bozze||''} turni in bozza</button><button class="btn pri" onclick="formTurno()">Nuovo turno</button>`);
+  if(S.ritiri && S.ritiri.length) h+='<div class="ritiri"><b>Ritiri da gestire</b>'+S.ritiri.map(r=>{const t=r.tp_turni||{}; const c=collabById(r.collaboratore_id)||{nome:'?'};
+    return `<div class="rit"><span>${esc(c.nome)} si è ritirato/a da <b>${esc((piscinaById(t.piscina_id)||{nome:'?'}).nome)}</b>, ${t.data?nomeGiorno(t.data):''} ${hm(t.ora_inizio)}–${hm(t.ora_fine)}: era in squadra, il posto è scoperto.</span><button class="btn pic" onclick="ritiroVisto('${r.id}')">Visto</button></div>`}).join('')+'</div>';
   if(!S.piscine.some(p=>p.attiva)) h+='<div class="vuoto">Prima inserisci le sedi nella scheda Sedi, poi potrai creare i turni.</div>';
   else if(!S.turni.length) h+='<div class="vuoto">Nessun turno in questo mese. Crea il primo con “Nuovo turno”.</div>';
   else{
@@ -327,6 +337,7 @@ function vistaTurni(){
           <div class="req"><span class="${cls(a.nF,t.fotografi)}">Fotografi ${a.nF}/${t.fotografi}</span><span class="${cls(a.nS,t.stampatori)}">Stampatori ${a.nS}/${t.stampatori}</span></div>
           <div class="chips">${a.ass.map(x=>{const c=collabById(x.collaboratore_id)||{nome:'?'};return `<span class="chip"><span class="r ${x.ruolo}">${x.ruolo==='F'?'FOTO':'STAMPA'}</span>${esc(c.nome)}${c.auto?' 🚗':''}<button title="Togli ${esc(c.nome)}" onclick="togli('${x.id}')">×</button></span>`}).join('')}</div>
           ${t.note?`<div class="note">${esc(t.note)}</div>`:''}
+          ${rigaCandidati(t)}
           ${rigaIncassi(t)}
           ${rigaPresenze(t,a)}
           ${a.avvisi.length?`<ul class="avvisi">${a.avvisi.map(v=>'<li>⚠ '+esc(v)+'</li>').join('')}</ul>`:''}
@@ -422,6 +433,12 @@ async function ripristinaTurno(id){
 }
 function oreAss(x,t){ if(x.presente!==true) return 0; return Math.max(0, minuti(x.ora_fine_eff||t.ora_fine)-minuti(x.ora_inizio_eff||t.ora_inizio))/60; }
 function fmtOre(h){ return (Math.round(h*10)/10).toLocaleString('it-IT')+' h'; }
+function rigaCandidati(t){
+  const k=S.cand.filter(x=>x.turno_id===t.id); const posti=(t.fotografi||0)+(t.stampatori||0);
+  if(!k.length) return '<div class="note">Nessun candidato</div>';
+  const fuori=k.filter(x=>!S.ass.some(a=>a.turno_id===t.id&&a.collaboratore_id===x.collaboratore_id));
+  return `<div class="note">Candidati: <b>${k.length}</b> per ${posti} posti${fuori.length?' · non in squadra: '+fuori.map(x=>esc((collabById(x.collaboratore_id)||{nome:'?'}).nome)).join(', '):''}</div>`;
+}
 function rigaPresenze(t,a){
   if(!a.ass.length) return '';
   if(t.presenze_ok){
@@ -513,9 +530,7 @@ function statoPersona(c,t){
   const giaQui = S.ass.find(a=>a.turno_id===t.id && a.collaboratore_id===c.id);
   const altri = S.ass.filter(a=>a.collaboratore_id===c.id && a.turno_id!==t.id).map(a=>S.turni.find(x=>x.id===a.turno_id)).filter(x=>x&&!x.annullato&&x.data===t.data);
   const conflitto = altri.some(x=> hm(x.ora_inizio)<hm(t.ora_fine) && hm(t.ora_inizio)<hm(x.ora_fine));
-  const dichiarate = S.disp.filter(d=>d.collaboratore_id===c.id);
-  let disp=null; // null = non ha compilato nulla nel mese
-  if(dichiarate.length){ disp = fasceTurno(t).every(f=>dichiarate.some(d=>d.data===t.data && d.fascia===f)); }
+  const disp = S.cand.some(k=>k.turno_id===t.id && k.collaboratore_id===c.id);   // si è candidato a questo turno
   const nelMese = S.ass.filter(a=>a.collaboratore_id===c.id).length;
   return { giaQui, conflitto, disp, nelMese, stessoGiorno:altri.length };
 }
@@ -525,16 +540,15 @@ function formAssegna(id){
   const a=analisiTurno(t);
   const righe = S.collab.filter(c=>c.attivo).map(c=>({c, st:statoPersona(c,t)}))
     .sort((x,y)=> (punteggio(y)-punteggio(x)) || (y.c.livello-x.c.livello) || (x.st.nelMese-y.st.nelMese) || x.c.nome.localeCompare(y.c.nome));
-  function punteggio(r){ if(r.st.giaQui) return 4; if(r.st.conflitto) return 0; if(r.st.disp===true) return 3; if(r.st.disp===null) return 2; return 1; }
+  function punteggio(r){ if(r.st.giaQui) return 4; if(r.st.conflitto) return 0; if(r.st.disp) return 3; return 1; }
   const h = `<p style="margin:0 0 6px"><b>${esc(p.nome)}</b> ${puntini(p.importanza)} · ${nomeGiorno(t.data)}, ${hm(t.ora_inizio)}–${hm(t.ora_fine)}</p>
   <p class="note" style="margin:0 0 8px">Fotografi ${a.nF}/${t.fotografi}, stampatori ${a.nS}/${t.stampatori}</p>
   ${righe.map(({c,st})=>{
     let d;
     if(st.giaQui) d='<span class="ok">In squadra come '+(st.giaQui.ruolo==='F'?'fotografo':'stampatore')+'</span>';
     else if(st.conflitto) d='<span class="ko">In un altro turno alla stessa ora</span>';
-    else if(st.disp===true) d='<span class="ok">Disponibile</span>';
-    else if(st.disp===false) d='<span class="ko">Non disponibile</span>';
-    else d='Disponibilità non indicata';
+    else if(st.disp) d='<span class="ok">Candidato</span>';
+    else d='Non candidato';
     const info=[RUOLI[c.ruolo], '<span class="stelle">'+stelle(c.livello)+'</span>', c.auto?'🚗 macchina':'senza macchina', st.nelMese+' turni nel mese'].join(', ');
     const b = st.giaQui ? `<button class="btn pic del" onclick="togliDaDialog('${st.giaQui.id}','${t.id}')">Togli</button>`
       : (c.ruolo!=='S'?`<button class="btn pic" onclick="assegna('${t.id}','${c.id}','F')">Foto</button>`:'')
@@ -632,7 +646,7 @@ async function formLinkIncassi(id, rigenera){
 
 function formLinkCalendario(){
   const url=new URL('calendario.html', location.href).href;
-  const testo='Ciao! Qui trovi le date dei turni: segna quando sei disponibile e controlla i tuoi turni. '+url;
+  const testo='Ciao! Qui trovi i turni: candidati a quelli che puoi fare e controlla la tua squadra. '+url;
   apriDialog('Link calendario', `
     <p style="margin:0 0 10px">Lo stesso link per tutti i collaboratori. Al primo accesso scelgono il proprio nome e il telefono se lo ricorda.</p>
     <p class="note" style="word-break:break-all;margin:0 0 12px">${esc(url)}</p>
@@ -654,11 +668,7 @@ function calcolaProposta(includiNonIndicati){
   const imp = t => (piscinaById(t.piscina_id)||{importanza:1}).importanza;
   const turni = S.turni.filter(t=>!t.pubblicato && !t.annullato).sort((a,b)=> (imp(b)-imp(a)) || a.data.localeCompare(b.data) || hm(a.ora_inizio).localeCompare(hm(b.ora_inizio)));
 
-  const disponibile = (c,t) => {
-    const dich = S.disp.filter(d=>d.collaboratore_id===c.id);
-    if(!dich.length) return includiNonIndicati;
-    return fasceTurno(t).every(f=>dich.some(d=>d.data===t.data && d.fascia===f));
-  };
+  const disponibile = (c,t) => includiNonIndicati || S.cand.some(k=>k.turno_id===t.id && k.collaboratore_id===c.id);
   const altriTurniStessoGiorno = (c,t) => lavoro.filter(a=>a.collaboratore_id===c.id && a.turno_id!==t.id)
     .map(a=>S.turni.find(x=>x.id===a.turno_id)).filter(x=>x && !x.annullato && x.data===t.data);
   const inConflitto = (c,t) => altriTurniStessoGiorno(c,t).some(x=> hm(x.ora_inizio)<hm(t.ora_fine) && hm(t.ora_inizio)<hm(x.ora_fine));
@@ -708,7 +718,7 @@ function calcolaProposta(includiNonIndicati){
 function formProponi(includi){
   const { nuove, esito } = calcolaProposta(includi);
   const corpo = `
-    <label class="spunta"><input type="checkbox" ${includi?'checked':''} onchange="formProponi(this.checked)"> Usa anche chi non ha indicato nessuna disponibilità nel mese</label>
+    <label class="spunta"><input type="checkbox" ${includi?'checked':''} onchange="formProponi(this.checked)"> Usa anche chi non si è candidato al turno</label>
     <p class="note" style="margin:0 0 10px">Riempie solo i posti liberi dei turni in bozza. Chi è già assegnato resta dov'è. Dopo puoi correggere a mano.</p>
     ${esito.length ? esito.map(({t,squadra,aggiunti,avvisi})=>{
       const p=piscinaById(t.piscina_id)||{nome:'?',importanza:1};
@@ -729,40 +739,42 @@ function formProponi(includi){
 function vistaDisp(){
   const m=document.getElementById('main');
   const attivi=S.collab.filter(c=>c.attivo);
-  // divisione per sede: si vedono solo i giorni e le fasce dei turni della sede scelta
+  // divisione per sede: una colonna per ogni turno della sede scelta
   const turniOk=S.turni.filter(t=>!t.annullato);
   const sediMese=[...new Set(turniOk.map(t=>t.piscina_id))].map(id=>piscinaById(id)||{id,nome:'?'}).sort((a,b)=>a.nome.localeCompare(b.nome));
   if(S.sedeDisp!=='tutte' && !sediMese.some(p=>p.id===S.sedeDisp)) S.sedeDisp = sediMese[0]?.id || 'tutte';
   const turniV = S.sedeDisp==='tutte' ? turniOk : turniOk.filter(t=>t.piscina_id===S.sedeDisp);
-  const giorni=[...new Set(turniV.map(t=>t.data))].sort();
-  let h=barraMese('<span class="note">Solo le date con turni. Di solito la compilano i collaboratori; qui potete correggerla voi.</span>');
-  if(sediMese.length) h+='<div class="sedi">'+sediMese.map(p=>`<button aria-current="${S.sedeDisp===p.id}" onclick="sedeDisp('${p.id}')">${esc(p.nome)}<small>${new Set(turniOk.filter(t=>t.piscina_id===p.id).map(t=>t.data)).size} gg</small></button>`).join('')
+  let h=barraMese('<span class="note">Le candidature le fanno i collaboratori dal calendario; qui potete aggiungerle o toglierle voi.</span>');
+  if(sediMese.length) h+='<div class="sedi">'+sediMese.map(p=>`<button aria-current="${S.sedeDisp===p.id}" onclick="sedeDisp('${p.id}')">${esc(p.nome)}<small>${turniOk.filter(t=>t.piscina_id===p.id).length} turni</small></button>`).join('')
     +(sediMese.length>1?`<button aria-current="${S.sedeDisp==='tutte'}" onclick="sedeDisp('tutte')">Tutte</button>`:'')+'</div>';
-  if(!giorni.length){ m.innerHTML=h+'<div class="vuoto">Nessuna data in questo mese. Inserisci prima i turni (sede, data e orario) nella scheda Turni: qui compariranno solo quei giorni.</div>'; return; }
+  if(!turniV.length){ m.innerHTML=h+'<div class="vuoto">Nessun turno in questo mese. Inserisci prima i turni (sede, data e orario) nella scheda Turni.</div>'; return; }
   if(!attivi.length){ m.innerHTML=h+'<div class="vuoto">Nessun collaboratore attivo.</div>'; return; }
-  const fasceGiorno = d => { const f=new Set(); turniV.filter(t=>t.data===d).forEach(t=>fasceTurno(t).forEach(x=>f.add(x))); return ['M','P'].filter(x=>f.has(x)); };
-  h+='<div class="griglia"><table><thead><tr><th class="nome">Collaboratore</th>'+giorni.map(d=>{
-    const [y,mm,g]=d.split('-').map(Number); const wd=new Date(y,mm-1,g).toLocaleDateString('it-IT',{weekday:'short'});
-    const tg=turniV.filter(t=>t.data===d);
-    const piscine=tg.map(t=>esc((piscinaById(t.piscina_id)||{nome:'?'}).nome)+'<br><span class="ore">'+hm(t.ora_inizio)+'–'+hm(t.ora_fine)+'</span>').join('<br>');
-    return `<th class="ev">${wd} ${g}<div class="pisc">${piscine}</div></th>`;
+  h+='<div class="griglia"><table><thead><tr><th class="nome">Collaboratore</th>'+turniV.map(t=>{
+    const [y,mm,g]=t.data.split('-').map(Number); const wd=new Date(y,mm-1,g).toLocaleDateString('it-IT',{weekday:'short'});
+    const nc=S.cand.filter(k=>k.turno_id===t.id).length, posti=(t.fotografi||0)+(t.stampatori||0);
+    return `<th class="ev">${wd} ${g}<div class="pisc">${S.sedeDisp==='tutte'?esc((piscinaById(t.piscina_id)||{nome:'?'}).nome)+'<br>':''}<span class="ore">${hm(t.ora_inizio)}–${hm(t.ora_fine)}</span><br><span class="${nc>=posti?'pieno':'manca'}">${nc}/${posti}</span></div></th>`;
   }).join('')+'</tr></thead><tbody>';
   attivi.forEach(c=>{
-    h+=`<tr><td class="nome">${esc(c.nome)}</td>`+giorni.map(d=>{
-      const s=f=>S.disp.some(x=>x.collaboratore_id===c.id&&x.data===d&&x.fascia===f);
-      return '<td><div class="fx">'+fasceGiorno(d).map(f=>`<button class="${s(f)?'si':''}" title="${f==='M'?'Mattina':'Sera'}" onclick="toggleDisp('${c.id}','${d}','${f}')">${f==='M'?'M':'S'}</button>`).join('')+'</div></td>';
+    h+=`<tr><td class="nome">${esc(c.nome)}</td>`+turniV.map(t=>{
+      const k=S.cand.some(x=>x.turno_id===t.id&&x.collaboratore_id===c.id);
+      const sq=S.ass.some(x=>x.turno_id===t.id&&x.collaboratore_id===c.id);
+      return `<td><div class="fx"><button class="${sq?'sq':k?'si':''}" title="${sq?'In squadra':k?'Candidato: tocca per togliere':'Tocca per candidare'}" onclick="toggleCand('${c.id}','${t.id}')">${sq?'★':k?'✓':''}</button></div></td>`;
     }).join('')+'</tr>';
   });
-  m.innerHTML=h+'</tbody></table></div><p class="note">M = mattina (turni che iniziano prima delle 13), S = sera (turni che iniziano dalle 13). I turni di oltre 8 ore chiedono sia M sia S.</p>';
+  m.innerHTML=h+'</tbody></table></div><p class="note">✓ = candidato · ★ = in squadra · in alto i candidati sui posti del turno.</p>';
 }
 function sedeDisp(id){ S.sedeDisp=id; vistaDisp(); }
-async function toggleDisp(cid,data,fascia){
-  const c=S.disp.find(x=>x.collaboratore_id===cid&&x.data===data&&x.fascia===fascia);
-  const r = c ? await sb.from('tp_disponibilita').delete().match({collaboratore_id:cid,data,fascia})
-              : await sb.from('tp_disponibilita').insert({collaboratore_id:cid,data,fascia});
+async function toggleCand(cid,tid){
+  const c=S.cand.find(x=>x.collaboratore_id===cid&&x.turno_id===tid);
+  const r = c ? await sb.from('tp_candidature').delete().eq('id',c.id)
+              : await sb.from('tp_candidature').insert({collaboratore_id:cid,turno_id:tid}).select().single();
   if(errore(r.error)) return;
-  if(c) S.disp=S.disp.filter(x=>x!==c); else S.disp.push({collaboratore_id:cid,data,fascia});
+  if(c) S.cand=S.cand.filter(x=>x!==c); else S.cand.push(r.data);
   const sx=document.querySelector('.griglia')?.scrollLeft; vistaDisp(); const g=document.querySelector('.griglia'); if(g) g.scrollLeft=sx||0;
+}
+async function ritiroVisto(id){
+  if(errore((await sb.from('tp_ritiri').update({visto:true}).eq('id',id)).error)) return;
+  S.ritiri=S.ritiri.filter(x=>x.id!==id); vistaTurni();
 }
 
 // ---------- COLLABORATORI ----------
