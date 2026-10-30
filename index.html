@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Frame · Turni piscine</title>
+<title>Frame · Turni</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
@@ -149,7 +149,7 @@ function toast(msg, err){ const t=document.getElementById('toast'); t.textConten
 function errore(e){
   if(!e) return false;
   let m = e.message || String(e);
-  if(e.code==='23505') m='Esiste già un elemento uguale (stesso nome, oppure stessa piscina, data e ora).';
+  if(e.code==='23505') m='Esiste già un elemento uguale (stesso nome, oppure stessa sede, data e ora).';
   if(e.code==='23503') m='Non si può eliminare: è usato in qualche turno. Puoi disattivarlo invece.';
   toast(m,true); return true;
 }
@@ -172,7 +172,7 @@ async function avvio(){
 function schermataLogin(msg){
   document.getElementById('app').innerHTML = `
   <div class="login"><div class="corsia"></div><div class="corpo">
-    <img class="logo-login" src="logo-nero.png" alt="Frame About You"><h1>Turni piscine</h1><p>Accesso organizzatori</p>
+    <img class="logo-login" src="logo-nero.png" alt="Frame About You"><h1>Turni</h1><p>Accesso organizzatori</p>
     <form id="fl">
       <label class="campo"><span>Email</span><input name="email" type="email" autocomplete="username" required></label>
       <label class="campo"><span>Password</span><input name="pw" type="password" autocomplete="current-password" required></label>
@@ -243,10 +243,10 @@ async function ricarica(){ await caricaMese(); disegna(); }
 
 // ---------- struttura ----------
 function disegna(){
-  const tabs=[['turni','Turni'],['disponibilita','Disponibilità'],['collaboratori','Collaboratori'],['piscine','Piscine']];
+  const tabs=[['turni','Turni'],['disponibilita','Disponibilità'],['collaboratori','Collaboratori'],['piscine','Sedi']];
   document.getElementById('app').innerHTML = `
   <header>
-    <div class="top"><img class="logo" src="logo-bianco.png" alt="Frame About You"><h1>Turni piscine</h1><span class="chi">${esc(S.me.nome)}</span><button onclick="esci()">Esci</button></div>
+    <div class="top"><img class="logo" src="logo-bianco.png" alt="Frame About You"><h1>Turni</h1><span class="chi">${esc(S.me.nome)}</span><button onclick="esci()">Esci</button></div>
     <nav>${tabs.map(([k,l])=>`<button aria-current="${S.tab===k}" onclick="vai('${k}')">${l}</button>`).join('')}</nav>
     <div class="corsia"></div>
   </header>
@@ -278,7 +278,7 @@ function vistaTurni(){
   const m=document.getElementById('main');
   const bozze=S.turni.filter(t=>!t.pubblicato).length;
   let h = barraMese(`<button class="btn" onclick="formLinkCalendario()">Link calendario</button><button class="btn" ${bozze?'':'disabled'} onclick="formProponi(false)">Proponi turni</button><button class="btn" ${bozze?'':'disabled'} onclick="pubblicaMese()">Pubblica ${bozze||''} turni in bozza</button><button class="btn pri" onclick="formTurno()">Nuovo turno</button>`);
-  if(!S.piscine.some(p=>p.attiva)) h+='<div class="vuoto">Prima inserisci le piscine nella scheda Piscine, poi potrai creare i turni.</div>';
+  if(!S.piscine.some(p=>p.attiva)) h+='<div class="vuoto">Prima inserisci le sedi nella scheda Sedi, poi potrai creare i turni.</div>';
   else if(!S.turni.length) h+='<div class="vuoto">Nessun turno in questo mese. Crea il primo con “Nuovo turno”.</div>';
   else{
     const giorni=[...new Set(S.turni.map(t=>t.data))];
@@ -316,7 +316,7 @@ function formTurno(id){
   const dataDef = t ? t.data : (o>=da&&o<=a ? o : da);
   const opz = S.piscine.filter(p=>p.attiva || (t&&p.id===t.piscina_id)).map(p=>`<option value="${p.id}" ${t&&t.piscina_id===p.id?'selected':''}>${esc(p.nome)}</option>`).join('');
   apriDialog(t?'Modifica turno':'Nuovo turno', `
-    <label class="campo"><span>Piscina</span><select name="piscina_id" required>${opz}</select></label>
+    <label class="campo"><span>Sede</span><select name="piscina_id" required>${opz}</select></label>
     <label class="campo"><span>Data</span><input type="date" name="data" value="${dataDef}" required></label>
     <div class="due">
       <label class="campo"><span>Inizio</span><input type="time" name="ora_inizio" value="${t?hm(t.ora_inizio):'09:00'}" required></label>
@@ -408,7 +408,7 @@ function rigaIncassi(t){
   if(!i && !sp.length) h+='<div class="note">Incassi non ancora inseriti</div>';
   else{
     const tot=sp.reduce((a,x)=>a+Number(x.importo||0),0);
-    const parti=['Contanti '+eur(i?.cash),'POS '+eur(i?.pos),'% piscina '+eur(i?.percentuale_piscina)];
+    const parti=['Contanti '+eur(i?.cash),'POS '+eur(i?.pos),'% sede '+eur(i?.percentuale_piscina)];
     if(sp.length) parti.push('Spese '+eur(tot)+' ('+sp.map(x=>esc(x.descrizione)).join(', ')+')');
     h+='<div class="note" style="color:var(--ink)"><b>Incassi:</b> '+parti.join(', ')+'</div>';
   }
@@ -475,11 +475,11 @@ async function formLinkIncassi(id, rigenera){
 
 function formLinkCalendario(){
   const url=new URL('calendario.html', location.href).href;
-  const testo='Ciao! Qui trovi le date delle piscine: segna quando sei disponibile e controlla i tuoi turni. '+url;
+  const testo='Ciao! Qui trovi le date dei turni: segna quando sei disponibile e controlla i tuoi turni. '+url;
   apriDialog('Link calendario', `
     <p style="margin:0 0 10px">Lo stesso link per tutti i collaboratori. Al primo accesso scelgono il proprio nome e il telefono se lo ricorda.</p>
     <p class="note" style="word-break:break-all;margin:0 0 12px">${esc(url)}</p>
-    <p class="note" style="margin:0 0 12px">Mostra solo nomi, date, orari e piscine: niente contatti, livelli, importanza o cifre.</p>
+    <p class="note" style="margin:0 0 12px">Mostra solo nomi, date, orari e sedi: niente contatti, livelli, importanza o cifre.</p>
     <div class="azioni">
       <button type="button" class="btn pic" onclick="copia('${url}')">Copia link</button>
       <a class="btn pic pri" style="text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(testo)}">Manda su WhatsApp</a>
@@ -574,8 +574,8 @@ function vistaDisp(){
   const attivi=S.collab.filter(c=>c.attivo);
   // solo le date in cui ci sono piscine, e solo le fasce che servono quel giorno
   const giorni=[...new Set(S.turni.map(t=>t.data))].sort();
-  let h=barraMese('<span class="note">Solo le date con piscine. Di solito la compilano i collaboratori; qui potete correggerla voi.</span>');
-  if(!giorni.length){ m.innerHTML=h+'<div class="vuoto">Nessuna data in questo mese. Inserisci prima le piscine con data e orario nella scheda Turni: qui compariranno solo quei giorni.</div>'; return; }
+  let h=barraMese('<span class="note">Solo le date con turni. Di solito la compilano i collaboratori; qui potete correggerla voi.</span>');
+  if(!giorni.length){ m.innerHTML=h+'<div class="vuoto">Nessuna data in questo mese. Inserisci prima i turni (sede, data e orario) nella scheda Turni: qui compariranno solo quei giorni.</div>'; return; }
   if(!attivi.length){ m.innerHTML=h+'<div class="vuoto">Nessun collaboratore attivo.</div>'; return; }
   const fasceGiorno = d => { const f=new Set(); S.turni.filter(t=>t.data===d).forEach(t=>fasceTurno(t).forEach(x=>f.add(x))); return ['M','P'].filter(x=>f.has(x)); };
   h+='<div class="griglia"><table><thead><tr><th class="nome">Collaboratore</th>'+giorni.map(d=>{
@@ -587,10 +587,10 @@ function vistaDisp(){
   attivi.forEach(c=>{
     h+=`<tr><td class="nome">${esc(c.nome)}</td>`+giorni.map(d=>{
       const s=f=>S.disp.some(x=>x.collaboratore_id===c.id&&x.data===d&&x.fascia===f);
-      return '<td><div class="fx">'+fasceGiorno(d).map(f=>`<button class="${s(f)?'si':''}" title="${f==='M'?'Mattina':'Pomeriggio'}" onclick="toggleDisp('${c.id}','${d}','${f}')">${f}</button>`).join('')+'</div></td>';
+      return '<td><div class="fx">'+fasceGiorno(d).map(f=>`<button class="${s(f)?'si':''}" title="${f==='M'?'Mattina':'Sera'}" onclick="toggleDisp('${c.id}','${d}','${f}')">${f==='M'?'M':'S'}</button>`).join('')+'</div></td>';
     }).join('')+'</tr>';
   });
-  m.innerHTML=h+'</tbody></table></div><p class="note">M = mattina (turni che iniziano prima delle 13), P = pomeriggio (turni che finiscono dopo le 13).</p>';
+  m.innerHTML=h+'</tbody></table></div><p class="note">M = mattina (turni che iniziano prima delle 13), S = sera (turni che finiscono dopo le 13).</p>';
 }
 async function toggleDisp(cid,data,fascia){
   const c=S.disp.find(x=>x.collaboratore_id===cid&&x.data===data&&x.fascia===fascia);
@@ -653,8 +653,8 @@ async function eliminaCollab(id){
 // ---------- PISCINE ----------
 function vistaPiscine(){
   const m=document.getElementById('main');
-  let h='<div class="barra"><span class="spazio"></span><button class="btn pri" onclick="formPiscina()">Nuova piscina</button></div>';
-  if(!S.piscine.length) h+='<div class="vuoto">Nessuna piscina. Aggiungi la prima.</div>';
+  let h='<div class="barra"><span class="spazio"></span><button class="btn pri" onclick="formPiscina()">Nuova sede</button></div>';
+  if(!S.piscine.length) h+='<div class="vuoto">Nessuna sede. Aggiungi la prima.</div>';
   h+='<div class="lista">'+S.piscine.map(p=>`<div class="riga ${p.attiva?'':'off'}">
     <b>${esc(p.nome)}</b>${puntini(p.importanza)}
     ${p.attiva?'':'<span class="tag">non attiva</span>'}
@@ -664,27 +664,27 @@ function vistaPiscine(){
 }
 function formPiscina(id){
   const p = id ? piscinaById(id) : null;
-  apriDialog(p?'Modifica piscina':'Nuova piscina', `
+  apriDialog(p?'Modifica sede':'Nuova sede', `
     <label class="campo"><span>Nome</span><input name="nome" value="${esc(p?.nome)}" required></label>
     <label class="campo"><span>Importanza (1–5)</span><select name="importanza">${[1,2,3,4,5].map(n=>`<option ${(p?p.importanza:3)===n?'selected':''}>${n}</option>`).join('')}</select></label>
     <label class="campo"><span>Indirizzo</span><input name="indirizzo" value="${esc(p?.indirizzo)}"></label>
     <label class="campo"><span>Referente e contatto</span><input name="contatto" value="${esc(p?.contatto)}"></label>
     <label class="campo"><span>Note</span><textarea name="note" rows="2">${esc(p?.note)}</textarea></label>
     <label class="spunta"><input type="checkbox" name="attiva" ${!p||p.attiva?'checked':''}> Attiva</label>
-    ${p?`<button type="button" class="btn pic del" onclick="eliminaPiscina('${p.id}')">Elimina piscina</button>`:''}`,
+    ${p?`<button type="button" class="btn pic del" onclick="eliminaPiscina('${p.id}')">Elimina sede</button>`:''}`,
   async f=>{
     const rec={ nome:f.nome.value.trim().replace(/\s+/g,' '), importanza:+f.importanza.value, indirizzo:f.indirizzo.value.trim()||null,
       contatto:f.contatto.value.trim()||null, note:f.note.value.trim()||null, attiva:f.attiva.checked };
     const r = p ? await sb.from('tp_piscine').update(rec).eq('id',p.id) : await sb.from('tp_piscine').insert(rec);
     if(errore(r.error)) return false;
-    toast('Piscina salvata.'); await caricaTutto();
+    toast('Sede salvata.'); await caricaTutto();
   }, 'Salva');
 }
 async function eliminaPiscina(id){
   const p=piscinaById(id);
   if(!confirm('Eliminare '+p.nome+'? Se ha già dei turni non si può: in quel caso togli la spunta “Attiva”.')) return;
   if(errore((await sb.from('tp_piscine').delete().eq('id',id)).error)) return;
-  chiudiDialog(); toast('Piscina eliminata.'); caricaTutto();
+  chiudiDialog(); toast('Sede eliminata.'); caricaTutto();
 }
 
 // ---------- finestra di dialogo ----------

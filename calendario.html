@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Frame · Calendario piscine</title>
+<title>Frame · Calendario</title>
 <link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="config.js"></script>
@@ -60,7 +60,7 @@ function fasceTurno(t){ const f=[]; if(hm(t.ora_inizio)<'13:00') f.push('M'); if
 function toast(m,err){ const t=document.getElementById('toast'); t.textContent=m; t.className=err?'err':''; t.style.display='block'; clearTimeout(toast._t); toast._t=setTimeout(()=>t.style.display='none', err?5000:1800); }
 function leggiIo(){ try{ return localStorage.getItem(CHIAVE_NOME); }catch(e){ return null; } }
 function scriviIo(v){ try{ v ? localStorage.setItem(CHIAVE_NOME,v) : localStorage.removeItem(CHIAVE_NOME); }catch(e){} }
-function messaggio(t){ document.getElementById('app').innerHTML='<header><div class="top"><img class="logo" src="logo-bianco.png" alt="Frame About You"><h1>Calendario piscine</h1></div><div class="corsia"></div></header><main><div class="vuoto">'+t+'</div></main>'; }
+function messaggio(t){ document.getElementById('app').innerHTML='<header><div class="top"><img class="logo" src="logo-bianco.png" alt="Frame About You"><h1>Calendario</h1></div><div class="corsia"></div></header><main><div class="vuoto">'+t+'</div></main>'; }
 
 async function avvio(){
   if(!window.supabase) return messaggio('Connessione assente: ricarica la pagina.');
@@ -102,14 +102,14 @@ function giorni(){ return [...new Set(S.turni.map(t=>t.data))].sort(); }
 
 function vistaDisp(){
   const m=document.getElementById('main'); const gg=giorni();
-  if(!gg.length){ m.innerHTML='<div class="vuoto">Al momento non ci sono date di piscine in programma.</div>'; return; }
-  m.innerHTML = '<p class="intro">Tocca Mattina e/o Pomeriggio nei giorni in cui puoi lavorare. Il verde vuol dire disponibile; ritocca per togliere.</p>' + gg.map(d=>{
+  if(!gg.length){ m.innerHTML='<div class="vuoto">Al momento non ci sono date in programma.</div>'; return; }
+  m.innerHTML = '<p class="intro">Tocca Mattina e/o Sera nei giorni in cui puoi lavorare. Il verde vuol dire disponibile; ritocca per togliere.</p>' + gg.map(d=>{
     const tg=S.turni.filter(t=>t.data===d);
     const f=new Set(); tg.forEach(t=>fasceTurno(t).forEach(x=>f.add(x)));
     return `<div class="giorno"><h2>${nomeGiorno(d)}</h2>
       ${tg.map(t=>`<div class="pisc"><b>${esc(t.piscina)}</b> <span class="ore">${hm(t.ora_inizio)}–${hm(t.ora_fine)}</span></div>`).join('')}
       <div class="fasce">${['M','P'].filter(x=>f.has(x)).map(x=>{const si=S.disp.has(d+'|'+x);
-        return `<button class="${si?'si':''}" aria-pressed="${si}" onclick="tocca('${d}','${x}')">${x==='M'?'Mattina':'Pomeriggio'}<small>${si?'✓ disponibile':'non indicata'}</small></button>`}).join('')}</div>
+        return `<button class="${si?'si':''}" aria-pressed="${si}" onclick="tocca('${d}','${x}')">${x==='M'?'Mattina':'Sera'}<small>${si?'✓ disponibile':'non indicata'}</small></button>`}).join('')}</div>
     </div>`;
   }).join('');
 }
