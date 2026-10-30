@@ -52,6 +52,11 @@ main{max-width:1100px;margin:0 auto;padding:16px}
 
 .giorno{margin:22px 0 8px;font:700 1.05rem var(--fc);text-transform:capitalize;display:flex;align-items:baseline;gap:10px}
 .giorno small{font:500 .85rem var(--f);color:var(--muted);text-transform:none}
+.evento{background:var(--card);border:1px solid var(--line);border-left:8px solid var(--c);border-radius:12px;padding:12px 14px;margin-bottom:14px}
+.ev-head{display:flex;justify-content:space-between;gap:10px;font-size:1.1rem}
+.ev-stat{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:.88rem;color:var(--muted);margin:8px 0 2px}
+.ev-stat .pieno{color:var(--ok);font-weight:600}.ev-stat .manca{color:var(--warn);font-weight:600}.ev-stat .ko{color:var(--red);font-weight:600}
+.ev-giorni{margin-top:10px;border-top:1px solid var(--line);padding-top:4px}
 .turno{background:var(--card);border:1px solid var(--line);border-left:6px solid var(--water);border-radius:10px;padding:12px 14px;margin-bottom:10px}
 .turno.bozza{border-left-color:var(--grigio)}
 .t-head{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:baseline}
@@ -280,6 +285,9 @@ async function caricaMese(){
     sb.from('tp_disponibilita').select('*').gte('data',da).lte('data',a)
   ]);
   if(errore(t.error)||errore(d.error)) return;
+  const ev = await sb.from('tp_eventi').select('*').lte('data_inizio',a).gte('data_fine',da);
+  if(errore(ev.error)) return;
+  S.eventi=ev.data;
   S.turni=t.data; S.disp=d.data; S.ass=[]; S.incassi=[]; S.spese=[]; S.compensi=[]; S.cand=[];
   const rt = await sb.from('tp_ritiri').select('*, tp_turni(data,ora_inizio,ora_fine,piscina_id)').eq('visto',false).order('creato');
   S.ritiri = rt.error ? [] : rt.data;
@@ -305,7 +313,7 @@ async function ricarica(){ await caricaMese(); disegna(); }
 // ---------- struttura ----------
 function disegna(){
   const nNuovi=S.collab.filter(c=>c.nuovo).length;
-  const tabs=[['turni','Turni'],['disponibilita','Candidature'],['collaboratori','Collaboratori'+(nNuovi?' ('+nNuovi+' nuovi)':'')],['piscine','Sedi'],['riepilogo','Riepilogo']];
+  const tabs=[['turni','Eventi'],['disponibilita','Candidature'],['collaboratori','Collaboratori'+(nNuovi?' ('+nNuovi+' nuovi)':'')],['piscine','Sedi'],['riepilogo','Riepilogo']];
   document.getElementById('app').innerHTML = `
   <header>
     <div class="top"><img class="logo" src="logo-bianco.png" alt="Frame About You"><h1>Turni</h1><span class="chi">${esc(S.me.nome)}</span><button onclick="esci()">Esci</button></div>
@@ -349,28 +357,57 @@ function analisiTurno(t){
 function vistaTurni(){
   const m=document.getElementById('main');
   const bozze=S.turni.filter(t=>!t.pubblicato && !t.annullato).length;
-  let h = barraMese(`<button class="btn" onclick="formLinkCalendario()">Link calendario</button><button class="btn" ${bozze?'':'disabled'} onclick="formProponi(false)">Proponi turni</button><button class="btn" ${bozze?'':'disabled'} onclick="pubblicaMese()">Pubblica ${bozze||''} turni in bozza</button><button class="btn" onclick="formModificaBlocco()">Modifica più turni</button><button class="btn pri" onclick="formTurno()">Nuovo turno</button>`);
+  let h = barraMese(`<button class="btn" onclick="formLinkCalendario()">Link calendario</button><button class="btn" ${bozze?'':'disabled'} onclick="formProponi(false)">Proponi turni</button><button class="btn" ${bozze?'':'disabled'} onclick="pubblicaMese()">Pubblica ${bozze||''} turni in bozza</button><button class="btn" onclick="formModificaBlocco()">Modifica più turni</button><button class="btn pri" onclick="formTurno()">Nuovo evento</button>`);
   if(S.ritiri && S.ritiri.length) h+='<div class="ritiri"><b>Ritiri da gestire</b>'+S.ritiri.map(r=>{const t=r.tp_turni||{}; const c=collabById(r.collaboratore_id)||{nome:'?'};
     return `<div class="rit"><span>${esc(c.nome)} si è ritirato/a da <b>${esc((piscinaById(t.piscina_id)||{nome:'?'}).nome)}</b>, ${t.data?nomeGiorno(t.data):''} ${hm(t.ora_inizio)}–${hm(t.ora_fine)}: era in squadra, il posto è scoperto.</span><button class="btn pic" onclick="ritiroVisto('${r.id}')">Visto</button></div>`}).join('')+'</div>';
-  if(!S.piscine.some(p=>p.attiva)) h+='<div class="vuoto">Prima inserisci le sedi nella scheda Sedi, poi potrai creare i turni.</div>';
-  else if(!S.turni.length) h+='<div class="vuoto">Nessun turno in questo mese. Crea il primo con “Nuovo turno”.</div>';
-  else{
-    const giorni=[...new Set(S.turni.map(t=>t.data))];
-    giorni.forEach(g=>{
-      const tg=S.turni.filter(t=>t.data===g);
-      h+=`<div class="giorno">${nomeGiorno(g)} <small>${tg.length} ${tg.length===1?'turno':'turni'}</small></div>`;
-      tg.forEach(t=>{
+  if(!S.piscine.some(p=>p.attiva)){ m.innerHTML=h+'<div class="vuoto">Prima inserisci le sedi nella scheda Sedi, poi potrai creare gli eventi.</div>'; return; }
+  const eventi=[...(S.eventi||[])].sort((x,y)=>x.data_inizio.localeCompare(y.data_inizio));
+  const senza=S.turni.filter(t=>!t.evento_id || !eventi.some(e=>e.id===t.evento_id));
+  if(!eventi.length && !senza.length){ m.innerHTML=h+'<div class="vuoto">Nessun evento in questo mese. Crea il primo con “Nuovo evento”.</div>'; return; }
+  eventi.forEach(e=>{ h+=cardEvento(e, S.turni.filter(t=>t.evento_id===e.id)); });
+  if(senza.length) h+=cardEvento(null, senza);
+  m.innerHTML=h;
+}
+function periodoEvento(e){
+  const f=d=>{ const [y,m,g]=d.split('-').map(Number); return new Date(y,m-1,g).toLocaleDateString('it-IT',{weekday:'short',day:'numeric',month:'short'}); };
+  return e.data_inizio===e.data_fine ? f(e.data_inizio) : 'dal '+f(e.data_inizio)+' al '+f(e.data_fine);
+}
+function cardEvento(e, turni){
+  const p = piscinaById(e ? e.piscina_id : turni[0]?.piscina_id) || {nome:'?'};
+  const key = e ? e.id : 'senza';
+  if(!S.aperti) S.aperti={};
+  const aperto = key in S.aperti ? S.aperti[key] : turni.length<=4;
+  const validi=turni.filter(t=>!t.annullato), ann=turni.length-validi.length;
+  const coperti=validi.filter(t=>S.cand.filter(k=>k.turno_id===t.id).length >= (t.fotografi||0)+(t.stampatori||0)).length;
+  const pubb=validi.filter(t=>t.pubblicato).length;
+  const fasce=e ? [e.m_inizio?'mattina '+hm(e.m_inizio)+'–'+hm(e.m_fine):'', e.p_inizio?'pomeriggio '+hm(e.p_inizio)+'–'+hm(e.p_fine):''].filter(Boolean).join(' · ') : '';
+  let h=`<div class="evento" style="--c:${coloreSede(p)}">
+    <div class="ev-head"><div><b>${esc(e?.nome||p.nome)}</b>${e && e.nome && e.nome!==p.nome?` <span class="note">${esc(p.nome)}</span>`:''}
+      <div class="note">${e?periodoEvento(e)+(fasce?' · '+fasce:'')+' · '+e.fotografi+' foto + '+e.stampatori+' stampa':'Turni senza evento'}</div></div></div>
+    <div class="ev-stat"><span>${turni.length} turni questo mese</span>${validi.length?`<span class="${coperti>=validi.length?'pieno':'manca'}">candidati sufficienti ${coperti}/${validi.length}</span><span>squadre pubblicate ${pubb}/${validi.length}</span>`:''}${ann?`<span class="ko">annullati ${ann}</span>`:''}</div>
+    <div class="azioni"><button class="btn pic ${aperto?'':'pri'}" onclick="apriEvento('${key}',${!aperto})">${aperto?'Chiudi giorni':'Apri giorni'}</button>
+      ${e?`<button class="btn pic" onclick="formEvento('${e.id}')">Modifica evento</button><button class="btn pic del" onclick="eliminaEvento('${e.id}')">Elimina evento</button>`:''}</div>`;
+  if(aperto && turni.length){
+    h+='<div class="ev-giorni">';
+    [...new Set(turni.map(t=>t.data))].forEach(g=>{ const tg=turni.filter(t=>t.data===g);
+      h+=`<div class="giorno">${nomeGiorno(g)} <small>${tg.length} ${tg.length===1?'turno':'turni'}</small></div>`+tg.map(cardTurno).join(''); });
+    h+='</div>';
+  }
+  return h+'</div>';
+}
+function apriEvento(k,v){ S.aperti[k]=v; vistaTurni(); }
+
+function cardTurno(t){
         const p=piscinaById(t.piscina_id)||{nome:'?',importanza:1};
         const a=analisiTurno(t);
         const cls=(n,r)=> n>=r ? 'pieno' : 'manca';
         if(t.annullato){
-          h+=`<div class="turno annullato">
+          return `<div class="turno annullato">
           <div class="t-head"><b>${esc(p.nome)}</b><span class="t-ora">${hm(t.ora_inizio)}–${hm(t.ora_fine)}</span><span class="stato ann">Annullato${t.motivo_annullo?' · '+esc(t.motivo_annullo):''}</span></div>
           ${a.ass.length?`<div class="note" style="margin-top:6px">Squadra prevista: ${a.ass.map(x=>esc((collabById(x.collaboratore_id)||{nome:'?'}).nome)).join(', ')}</div>`:''}
           <div class="azioni"><button class="btn pic pri" onclick="ripristinaTurno('${t.id}')">Ripristina</button><button class="btn pic del" onclick="eliminaTurno('${t.id}')">Elimina</button></div></div>`;
-          return;
         }
-        h+=`<div class="turno ${t.pubblicato?'':'bozza'}">
+        return `<div class="turno ${t.pubblicato?'':'bozza'}">
           <div class="t-head"><b>${esc(p.nome)}</b>${puntini(p.importanza)}<span class="t-ora">${hm(t.ora_inizio)}–${hm(t.ora_fine)}</span><span class="stato ${t.pubblicato?'':'bozza'}">${t.pubblicato?'Pubblicato':'Bozza'}</span></div>
           <div class="req"><span class="${cls(a.nF,t.fotografi)}">Fotografi ${a.nF}/${t.fotografi}</span><span class="${cls(a.nS,t.stampatori)}">Stampatori ${a.nS}/${t.stampatori}</span></div>
           <div class="chips">${a.ass.map(x=>{const c=collabById(x.collaboratore_id)||{nome:'?'};return `<span class="chip"><span class="r ${x.ruolo}">${x.ruolo==='F'?'FOTO':'STAMPA'}</span>${esc(c.nome)}${c.auto?' 🚗':''}<button title="Togli ${esc(c.nome)}" onclick="togli('${x.id}')">×</button></span>`}).join('')}</div>
@@ -385,14 +422,10 @@ function vistaTurni(){
             <button class="btn pic" ${a.ass.length?'':'disabled'} onclick="formPresenze('${t.id}')">Presenze</button>
             <button class="btn pic" ${a.ass.length?'':'disabled'} onclick="formCompensi('${t.id}')">Compensi</button>
             <button class="btn pic" onclick="pubblica('${t.id}',${!t.pubblicato})">${t.pubblicato?'Rimetti in bozza':'Pubblica'}</button>
-            <button class="btn pic" onclick="formTurno('${t.id}')">Modifica</button>
+            <button class="btn pic" onclick="formTurno('${t.id}')">Modifica giorno</button>
             <button class="btn pic" onclick="formAnnulla('${t.id}')">Annulla turno</button>
-            <button class="btn pic del" onclick="eliminaTurno('${t.id}')">Elimina</button>
+            <button class="btn pic del" onclick="eliminaTurno('${t.id}')">Elimina giorno</button>
           </div></div>`;
-      });
-    });
-  }
-  m.innerHTML=h;
 }
 
 function formTurno(id){
@@ -412,7 +445,8 @@ function formTurno(id){
       <label class="campo"><span>Inizio</span><input type="time" name="p_inizio"></label>
       <label class="campo"><span>Fine</span><input type="time" name="p_fine"></label></div>
     <p class="note" style="margin:-4px 0 12px">Compilando mattina e pomeriggio si creano due turni per ogni giorno, così i ragazzi possono candidarsi a una sola metà o a tutte e due. Lascia vuota una delle due se serve un turno solo.</p>`;
-  apriDialog(t?'Modifica turno':'Nuovo turno', `
+  apriDialog(t?'Modifica giorno':'Nuovo evento', `
+    ${t?'':'<label class="campo"><span>Nome evento (facoltativo)</span><input name="nome" placeholder="es. Christmas World 2026 — se vuoto, il nome della sede"></label>'}
     <label class="campo"><span>Sede</span><select name="piscina_id" required>${opz}</select></label>
     ${t?`<label class="campo"><span>Data</span><input type="date" name="data" value="${dataDef}" required></label>`
       :`<div class="due">
@@ -459,12 +493,18 @@ function formTurno(id){
     if(!nuovi.length){ toast('Questi turni esistono già tutti.',true); return false; }
     if(nuovi.length>1){
       const it=x=>x.split('-').reverse().join('/');
-      if(!confirm('Creo '+nuovi.length+' turni ('+fasce.map(([i,e])=>i+'–'+e).join(' e ')+'), dal '+it(primo)+' al '+it(fine)+(saltati?' (salto '+saltati+' turni già presenti)':'')+'. Procedo?')) return false;
+      if(!confirm('Creo l\'evento con '+nuovi.length+' turni ('+fasce.map(([i,e])=>i+'–'+e).join(' e ')+'), dal '+it(primo)+' al '+it(fine)+(saltati?' (salto '+saltati+' turni già presenti)':'')+'. Procedo?')) return false;
     }
-    if(errore((await sb.from('tp_turni').insert(nuovi)).error)) return false;
+    const evRec={ piscina_id:base.piscina_id, nome:f.nome.value.trim()||(piscinaById(base.piscina_id)||{}).nome||null, data_inizio:primo, data_fine:fine,
+      m_inizio:f.m_inizio.value||null, m_fine:f.m_fine.value||null, p_inizio:f.p_inizio.value||null, p_fine:f.p_fine.value||null,
+      fotografi:base.fotografi, stampatori:base.stampatori, note:base.note };
+    const ev=await sb.from('tp_eventi').insert(evRec).select().single();
+    if(errore(ev.error)) return false;
+    const ins=await sb.from('tp_turni').insert(nuovi.map(r=>({...r, evento_id:ev.data.id})));
+    if(ins.error){ await sb.from('tp_eventi').delete().eq('id',ev.data.id); errore(ins.error); return false; }
     if(primo.slice(0,7)!==S.mese) S.mese=primo.slice(0,7);
-    toast(nuovi.length===1?'Turno creato.':nuovi.length+' turni creati.'); await ricarica();
-  }, t?'Salva turno':'Crea turni');
+    toast('Evento creato: '+nuovi.length+(nuovi.length===1?' turno.':' turni.')); await ricarica();
+  }, t?'Salva':'Crea evento');
 }
 
 // ---------- MODIFICA DI PIÙ TURNI INSIEME ----------
@@ -524,6 +564,117 @@ function formModificaBlocco(){
     }
     toast(scelti.length+(rec?' turni modificati.':' turni eliminati.')); await ricarica();
   }, 'Continua');
+}
+
+// ---------- EVENTI: modifica ed eliminazione ----------
+const fasciaT = t => hm(t.ora_inizio)<'13:00'?'M':'P';
+function dateTra(d1,d2){ const out=[]; const d=new Date(d1+'T12:00:00Z'); while(d.toISOString().slice(0,10)<=d2){ out.push(d.toISOString().slice(0,10)); d.setUTCDate(d.getUTCDate()+1); } return out; }
+async function contaLegati(ids){
+  let cand=0, ass=0;
+  for(let i=0;i<ids.length;i+=100){ const parte=ids.slice(i,i+100);
+    const [k,a]=await Promise.all([sb.from('tp_candidature').select('turno_id').in('turno_id',parte), sb.from('tp_assegnazioni').select('turno_id').in('turno_id',parte)]);
+    if(k.error||a.error) return null;
+    cand+=k.data.length; ass+=a.data.length; }
+  return {cand,ass};
+}
+async function aBlocchi(ids, fn){ for(let i=0;i<ids.length;i+=100){ if(errore((await fn(ids.slice(i,i+100))).error)) return false; } return true; }
+
+function formEvento(id){
+  const e=S.eventi.find(x=>x.id===id); if(!e) return;
+  const opz=S.piscine.map(p=>`<option value="${p.id}" ${p.id===e.piscina_id?'selected':''}>${esc(p.nome)}</option>`).join('');
+  apriDialog('Modifica evento', `
+    <label class="campo"><span>Nome evento</span><input name="nome" value="${esc(e.nome||'')}"></label>
+    <label class="campo"><span>Sede</span><select name="piscina_id">${opz}</select></label>
+    <div class="due">
+      <label class="campo"><span>Primo giorno</span><input type="date" name="d1" value="${e.data_inizio}" required></label>
+      <label class="campo"><span>Ultimo giorno</span><input type="date" name="d2" value="${e.data_fine}" required></label></div>
+    <p class="note" style="margin:0 0 6px"><b>Mattina</b> (lascia vuoto se non c'è)</p>
+    <div class="due">
+      <label class="campo"><span>Inizio</span><input type="time" name="m_inizio" value="${hm(e.m_inizio)}"></label>
+      <label class="campo"><span>Fine</span><input type="time" name="m_fine" value="${hm(e.m_fine)}"></label></div>
+    <p class="note" style="margin:0 0 6px"><b>Pomeriggio</b> (lascia vuoto se non c'è)</p>
+    <div class="due">
+      <label class="campo"><span>Inizio</span><input type="time" name="p_inizio" value="${hm(e.p_inizio)}"></label>
+      <label class="campo"><span>Fine</span><input type="time" name="p_fine" value="${hm(e.p_fine)}"></label></div>
+    <div class="due">
+      <label class="campo"><span>Fotografi richiesti</span><input type="number" min="0" max="9" name="fotografi" value="${e.fotografi}"></label>
+      <label class="campo"><span>Stampatori richiesti</span><input type="number" min="0" max="9" name="stampatori" value="${e.stampatori}"></label></div>
+    <label class="campo"><span>Note</span><textarea name="note" rows="2">${esc(e.note||'')}</textarea></label>
+    <p class="note">Le modifiche valgono per tutti i giorni dell'evento. I giorni che avete cambiato a mano (orari o posti diversi) restano come sono. Allungando il periodo si aggiungono i giorni nuovi; accorciandolo si eliminano quelli fuori, con candidature e squadre.</p>`,
+  async f=>{
+    const d1=f.d1.value, d2=f.d2.value;
+    if(!d1||!d2||d2<d1){ toast('Controlla le date.',true); return false; }
+    const nf={};
+    for(const [k,i,fi,nome] of [['M',f.m_inizio.value,f.m_fine.value,'mattina'],['P',f.p_inizio.value,f.p_fine.value,'pomeriggio']]){
+      if(!i&&!fi) continue;
+      if(!i||!fi||fi<=i){ toast('Controlla gli orari del '+nome+'.',true); return false; }
+      nf[k]=[i,fi];
+    }
+    if(!nf.M && !nf.P){ toast('Serve almeno la mattina o il pomeriggio.',true); return false; }
+    if(nf.M && nf.P && nf.P[0]<nf.M[1]){ toast('Il pomeriggio deve iniziare dopo la fine della mattina.',true); return false; }
+    if(nf.M && nf.M[0]>='13:00'){ toast('La mattina deve iniziare prima delle 13.',true); return false; }
+    if(nf.P && nf.P[0]<'13:00'){ toast('Il pomeriggio deve iniziare dalle 13 in poi.',true); return false; }
+    if(dateTra(d1,d2).length>120){ toast('Massimo 120 giorni per evento.',true); return false; }
+    const r=await sb.from('tp_turni').select('*').eq('evento_id',id); if(errore(r.error)) return false;
+    const turni=r.data;
+    const vecchie={M:e.m_inizio?[hm(e.m_inizio),hm(e.m_fine)]:null, P:e.p_inizio?[hm(e.p_inizio),hm(e.p_fine)]:null};
+    // 1. turni da eliminare: fuori dal nuovo periodo o di una fascia tolta
+    const via=turni.filter(t=>t.data<d1||t.data>d2||!nf[fasciaT(t)]);
+    const restano=turni.filter(t=>!via.includes(t));
+    // 2. orari: solo i turni che avevano ancora l'orario dell'evento
+    const aggOrari={M:[],P:[]};
+    for(const k of ['M','P']) if(nf[k] && vecchie[k] && (nf[k][0]!==vecchie[k][0]||nf[k][1]!==vecchie[k][1]))
+      aggOrari[k]=restano.filter(t=>fasciaT(t)===k && hm(t.ora_inizio)===vecchie[k][0] && hm(t.ora_fine)===vecchie[k][1]).map(t=>t.id);
+    // 3. posti: solo i turni che avevano ancora i posti dell'evento
+    const nfot=+f.fotografi.value, nsta=+f.stampatori.value;
+    const aggF = nfot!==e.fotografi ? restano.filter(t=>t.fotografi===e.fotografi).map(t=>t.id) : [];
+    const aggS = nsta!==e.stampatori ? restano.filter(t=>t.stampatori===e.stampatori).map(t=>t.id) : [];
+    // 4. turni nuovi: giorni aggiunti al periodo, e fasce aggiunte (su tutto il periodo)
+    const sede=f.piscina_id.value;
+    const nuovi=[];
+    for(const k of ['M','P']){ if(!nf[k]) continue;
+      const giorni = vecchie[k] ? dateTra(d1,d2).filter(d=>d<e.data_inizio||d>e.data_fine) : dateTra(d1,d2);
+      giorni.forEach(d=>{ if(!restano.some(t=>t.data===d && fasciaT(t)===k)) nuovi.push({piscina_id:sede, evento_id:id, data:d, ora_inizio:nf[k][0], ora_fine:nf[k][1], fotografi:nfot, stampatori:nsta}); });
+    }
+    // turni di altri eventi nella stessa sede, giorno e ora: si saltano
+    let saltati=0;
+    if(nuovi.length){
+      const es=await sb.from('tp_turni').select('data,ora_inizio').eq('piscina_id',sede).gte('data',d1).lte('data',d2).neq('evento_id',id);
+      if(errore(es.error)) return false;
+      const gia=new Set(es.data.map(x=>x.data+'|'+hm(x.ora_inizio)));
+      const prima=nuovi.length; for(let i=nuovi.length-1;i>=0;i--) if(gia.has(nuovi[i].data+'|'+nuovi[i].ora_inizio)) nuovi.splice(i,1); saltati=prima-nuovi.length;
+    }
+    // riepilogo e conferma
+    const righe=[];
+    if(via.length){ const c=await contaLegati(via.map(t=>t.id)); if(!c){ toast('Non riesco a controllare le candidature, riprova.',true); return false; }
+      righe.push('elimino '+via.length+' turni'+(c.cand||c.ass?' (con '+c.cand+' candidature e '+c.ass+' persone in squadra)':'')); }
+    if(nuovi.length) righe.push('aggiungo '+nuovi.length+' turni'+(saltati?' (ne salto '+saltati+' già occupati da un altro evento)':''));
+    const nOr=aggOrari.M.length+aggOrari.P.length; if(nOr) righe.push('cambio l\'orario di '+nOr+' turni');
+    if(aggF.length||aggS.length) righe.push('cambio i posti di '+new Set([...aggF,...aggS]).size+' turni');
+    if(sede!==e.piscina_id) righe.push('sposto tutti i turni nella sede '+(piscinaById(sede)||{nome:'?'}).nome);
+    if(righe.length && !confirm('Modifica evento: '+righe.join(', ')+'. Procedo?')) return false;
+    // esecuzione
+    if(via.length && !await aBlocchi(via.map(t=>t.id), p=>sb.from('tp_turni').delete().in('id',p))) return false;
+    for(const k of ['M','P']) if(aggOrari[k].length && !await aBlocchi(aggOrari[k], p=>sb.from('tp_turni').update({ora_inizio:nf[k][0],ora_fine:nf[k][1]}).in('id',p))) return false;
+    if(aggF.length && !await aBlocchi(aggF, p=>sb.from('tp_turni').update({fotografi:nfot}).in('id',p))) return false;
+    if(aggS.length && !await aBlocchi(aggS, p=>sb.from('tp_turni').update({stampatori:nsta}).in('id',p))) return false;
+    if(sede!==e.piscina_id && !await aBlocchi(restano.map(t=>t.id), p=>sb.from('tp_turni').update({piscina_id:sede}).in('id',p))) return false;
+    if(nuovi.length && errore((await sb.from('tp_turni').insert(nuovi)).error)) return false;
+    const rec={ nome:f.nome.value.trim()||null, piscina_id:sede, data_inizio:d1, data_fine:d2,
+      m_inizio:nf.M?nf.M[0]:null, m_fine:nf.M?nf.M[1]:null, p_inizio:nf.P?nf.P[0]:null, p_fine:nf.P?nf.P[1]:null,
+      fotografi:nfot, stampatori:nsta, note:f.note.value.trim()||null };
+    if(errore((await sb.from('tp_eventi').update(rec).eq('id',id)).error)) return false;
+    toast('Evento aggiornato.'); await ricarica();
+  }, 'Salva evento');
+}
+
+async function eliminaEvento(id){
+  const e=S.eventi.find(x=>x.id===id); if(!e) return;
+  const r=await sb.from('tp_turni').select('id').eq('evento_id',id); if(errore(r.error)) return;
+  const c=await contaLegati(r.data.map(x=>x.id)); if(!c){ toast('Non riesco a controllare le candidature, riprova.',true); return; }
+  if(!confirm('Eliminare l\'evento “'+(e.nome||'')+'” ('+periodoEvento(e)+')?\n\nSi cancellano '+r.data.length+' turni'+(c.cand||c.ass?', '+c.cand+' candidature e '+c.ass+' persone in squadra':'')+', con incassi, spese e presenze collegate. Non si può annullare.')) return;
+  if(errore((await sb.from('tp_eventi').delete().eq('id',id)).error)) return;
+  toast('Evento eliminato.'); ricarica();
 }
 
 async function eliminaTurno(id){
