@@ -69,7 +69,10 @@ main{max-width:1100px;margin:0 auto;padding:16px}
 .stato.ann{background:#FBE9EA;color:var(--red)}
 .rg{display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px;width:100%;text-align:left;background:none;border:0;border-top:1px solid var(--line);padding:10px 4px;cursor:pointer;font-size:.92rem}
 .rg:hover{background:var(--tile)}
-.rg .gg{font-weight:700;min-width:6.5em;text-transform:capitalize}
+.gr{display:flex;gap:10px;border-top:1px solid var(--line)}
+.gr-d{flex:0 0 6em;font-weight:700;padding:10px 0 0 4px;text-transform:capitalize}
+.gr-t{flex:1;min-width:0}
+.gr .rg{border-top:0}.gr .rg+.rg{border-top:1px dashed var(--line)}
 .rg .or{color:var(--muted);font-variant-numeric:tabular-nums;min-width:9.5em}
 .rg .pp{color:var(--muted)}
 .rg .pieno{color:var(--ok);font-weight:600}.rg .manca{color:var(--warn);font-weight:600}
@@ -117,7 +120,7 @@ main{max-width:1100px;margin:0 auto;padding:16px}
 .pres.ok{color:var(--ok);font-weight:600}
 .pres.da{color:var(--warn);font-weight:600}
 .riga-pres{display:grid;grid-template-columns:1fr auto auto;gap:6px 10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
-.riga-pres input[type=time]{border:1px solid var(--line);border-radius:6px;padding:4px 6px;font:inherit}
+.riga-pres select,.riga-pres input[type=time]{border:1px solid var(--line);border-radius:6px;padding:4px 6px;font:inherit}
 .riep{border-collapse:collapse;width:100%;font-size:.92rem}
 .riep th,.riep td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
 .riep th:first-child,.riep td:first-child{text-align:left}
@@ -217,6 +220,13 @@ function spostaMese(ym,n){ let [y,m]=ym.split('-').map(Number); m+=n; while(m>12
 function nomeMese(ym){ const [y,m]=ym.split('-').map(Number); return new Date(y,m-1,1).toLocaleDateString('it-IT',{month:'long',year:'numeric'}); }
 function nomeGiorno(d){ const [y,m,g]=d.split('-').map(Number); return new Date(y,m-1,g).toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long'}); }
 function hm(t){ return (t||'').slice(0,5); }
+// menu a tendina per gli orari (ogni 30 minuti; l'orario già salvato compare comunque anche se non è su questa griglia)
+function selOra(name, val, o={}){
+  val=hm(val||''); const v=[];
+  for(let m=360; m<=1410; m+=(o.passo||30)) v.push(pad(Math.floor(m/60))+':'+pad(m%60));
+  if(val && !v.includes(val)){ v.push(val); v.sort(); }
+  return `<select name="${name}"${o.label?` aria-label="${esc(o.label)}"`:''}>${o.vuoto?'<option value="">—</option>':''}${v.map(x=>`<option ${x===val?'selected':''}>${x}</option>`).join('')}</select>`;
+}
 function stelle(n){ return '★'.repeat(n)+'☆'.repeat(5-n); }
 function puntini(n){ return '<span class="imp" title="Importanza '+n+' su 5">'+[1,2,3,4,5].map(i=>'<i class="'+(i<=n?'on':'')+'"></i>').join('')+'</span>'; }
 function toast(msg, err){ const t=document.getElementById('toast'); t.textContent=msg; t.className=err?'err':''; t.style.display='block'; clearTimeout(toast._t); toast._t=setTimeout(()=>t.style.display='none', err?6000:2500); }
@@ -406,20 +416,20 @@ function cardEvento(e, turni){
     <div class="azioni"><button class="btn pic ${aperto?'':'pri'}" onclick="apriEvento('${key}',${!aperto})">${aperto?'Nascondi turni':'Mostra turni'}</button>
       ${e && validi.length>pubb?`<button class="btn pic pri" onclick="pubblicaEvento('${e.id}')">Pubblica squadre (${validi.length-pubb})</button>`:''}
       ${e?`<button class="btn pic" onclick="formEvento('${e.id}')">Modifica evento</button><details class="menu"><summary class="btn pic" aria-label="Altre azioni">⋯</summary><div class="menu-b"><button class="btn pic del" onclick="eliminaEvento('${e.id}')">Elimina evento</button></div></details>`:''}</div>`;
-  if(aperto && turni.length) h+='<div class="ev-giorni">'+turni.map(rigaTurno).join('')+'</div>';
+  if(aperto && turni.length) h+='<div class="ev-giorni">'+[...new Set(turni.map(t=>t.data))].map(g=>{
+    const [y,m,d]=g.split('-').map(Number), giorno=new Date(y,m-1,d).toLocaleDateString('it-IT',{weekday:'short',day:'numeric',month:'short'});
+    return `<div class="gr"><div class="gr-d">${giorno}</div><div class="gr-t">${turni.filter(t=>t.data===g).map(rigaTurno).join('')}</div></div>`; }).join('')+'</div>';
   return h+'</div>';
 }
 // una riga per turno: il dettaglio con tutti i bottoni si apre toccandola
 function rigaTurno(t){
   const a=analisiTurno(t), nc=S.cand.filter(k=>k.turno_id===t.id).length;
-  const [y,m,g]=t.data.split('-').map(Number);
-  const giorno=new Date(y,m-1,g).toLocaleDateString('it-IT',{weekday:'short',day:'numeric',month:'short'});
   const fascia=hm(t.ora_inizio)<'13:00'?'Mattina':'Pomeriggio';
   const ore=fascia+' '+hm(t.ora_inizio)+'–'+hm(t.ora_fine);
-  if(t.annullato) return `<button class="rg ann" onclick="apriTurno('${t.id}')"><span class="gg">${giorno}</span><span class="or">${ore}</span><span class="stato ann">Annullato${t.motivo_annullo?' · '+esc(t.motivo_annullo):''}</span><span class="sp"></span><span class="chev">›</span></button>`;
+  if(t.annullato) return `<button class="rg ann" onclick="apriTurno('${t.id}')"><span class="or">${ore}</span><span class="stato ann">Annullato${t.motivo_annullo?' · '+esc(t.motivo_annullo):''}</span><span class="sp"></span><span class="chev">›</span></button>`;
   const cls=(n,r)=> n>=r ? 'pieno' : 'manca';
   const daConf = t.data<=oggi() && a.ass.length && !t.presenze_ok;
-  return `<button class="rg" onclick="apriTurno('${t.id}')"><span class="gg">${giorno}</span><span class="or">${ore}</span>
+  return `<button class="rg" onclick="apriTurno('${t.id}')"><span class="or">${ore}</span>
     <span class="${cls(a.nF,t.fotografi)}">Foto ${a.nF}/${t.fotografi}</span><span class="${cls(a.nS,t.stampatori)}">Stampa ${a.nS}/${t.stampatori}</span>
     <span class="pp">${nc} ${nc===1?'candidato':'candidati'}</span>
     ${a.avvisi.length?'<span class="manca" title="'+esc(a.avvisi.join('; '))+'">⚠</span>':''}${daConf?'<span class="manca">presenze?</span>':''}
@@ -471,16 +481,16 @@ function formTurno(id){
   const dataDef = t ? t.data : (o>=da&&o<=a ? o : da);
   const opz = S.piscine.filter(p=>p.attiva || (t&&p.id===t.piscina_id)).map(p=>`<option value="${p.id}" ${t&&t.piscina_id===p.id?'selected':''}>${esc(p.nome)}</option>`).join('');
   const orari = t ? `<div class="due">
-      <label class="campo"><span>Inizio</span><input type="time" name="ora_inizio" value="${hm(t.ora_inizio)}" required></label>
-      <label class="campo"><span>Fine</span><input type="time" name="ora_fine" value="${hm(t.ora_fine)}" required></label></div>`
+      <label class="campo"><span>Inizio</span>${selOra('ora_inizio',t.ora_inizio)}</label>
+      <label class="campo"><span>Fine</span>${selOra('ora_fine',t.ora_fine)}</label></div>`
     : `<p class="note" style="margin:0 0 6px"><b>Mattina</b></p>
     <div class="due">
-      <label class="campo"><span>Inizio</span><input type="time" name="m_inizio" value="09:00"></label>
-      <label class="campo"><span>Fine</span><input type="time" name="m_fine" value="13:00"></label></div>
+      <label class="campo"><span>Inizio</span>${selOra('m_inizio','09:00',{vuoto:true})}</label>
+      <label class="campo"><span>Fine</span>${selOra('m_fine','13:00',{vuoto:true})}</label></div>
     <p class="note" style="margin:0 0 6px"><b>Pomeriggio</b> (facoltativo)</p>
     <div class="due">
-      <label class="campo"><span>Inizio</span><input type="time" name="p_inizio"></label>
-      <label class="campo"><span>Fine</span><input type="time" name="p_fine"></label></div>
+      <label class="campo"><span>Inizio</span>${selOra('p_inizio','',{vuoto:true})}</label>
+      <label class="campo"><span>Fine</span>${selOra('p_fine','',{vuoto:true})}</label></div>
     <p class="note" style="margin:-4px 0 12px">Compilando mattina e pomeriggio si creano due turni per ogni giorno, così i ragazzi possono candidarsi a una sola metà o a tutte e due. Lascia vuota una delle due se serve un turno solo.</p>`;
   apriDialog(t?'Modifica giorno':'Nuovo evento', `
     ${t?'':'<label class="campo"><span>Nome evento (facoltativo)</span><input name="nome" placeholder="es. Christmas World 2026 — se vuoto, il nome della sede"></label>'}
@@ -561,8 +571,8 @@ function formModificaBlocco(){
     <label class="campo"><span>Cosa vuoi fare</span><select name="azione" onchange="for(const x of this.form.querySelectorAll('[data-az]')) x.style.display = x.dataset.az===this.value?'':'none'">
       <option value="orari">Cambiare gli orari</option><option value="posti">Cambiare i posti richiesti</option><option value="elimina">Eliminare i turni</option></select></label>
     <div class="due" data-az="orari">
-      <label class="campo"><span>Nuovo inizio</span><input type="time" name="ini"></label>
-      <label class="campo"><span>Nuova fine</span><input type="time" name="fin"></label>
+      <label class="campo"><span>Nuovo inizio</span>${selOra('ini','',{vuoto:true})}</label>
+      <label class="campo"><span>Nuova fine</span>${selOra('fin','',{vuoto:true})}</label>
     </div>
     <div class="due" data-az="posti" style="display:none">
       <label class="campo"><span>Fotografi richiesti</span><input type="number" min="0" max="9" name="fot" value="1"></label>
@@ -627,12 +637,12 @@ function formEvento(id){
       <label class="campo"><span>Ultimo giorno</span><input type="date" name="d2" value="${e.data_fine}" required></label></div>
     <p class="note" style="margin:0 0 6px"><b>Mattina</b> (lascia vuoto se non c'è)</p>
     <div class="due">
-      <label class="campo"><span>Inizio</span><input type="time" name="m_inizio" value="${hm(e.m_inizio)}"></label>
-      <label class="campo"><span>Fine</span><input type="time" name="m_fine" value="${hm(e.m_fine)}"></label></div>
+      <label class="campo"><span>Inizio</span>${selOra('m_inizio',e.m_inizio,{vuoto:true})}</label>
+      <label class="campo"><span>Fine</span>${selOra('m_fine',e.m_fine,{vuoto:true})}</label></div>
     <p class="note" style="margin:0 0 6px"><b>Pomeriggio</b> (lascia vuoto se non c'è)</p>
     <div class="due">
-      <label class="campo"><span>Inizio</span><input type="time" name="p_inizio" value="${hm(e.p_inizio)}"></label>
-      <label class="campo"><span>Fine</span><input type="time" name="p_fine" value="${hm(e.p_fine)}"></label></div>
+      <label class="campo"><span>Inizio</span>${selOra('p_inizio',e.p_inizio,{vuoto:true})}</label>
+      <label class="campo"><span>Fine</span>${selOra('p_fine',e.p_fine,{vuoto:true})}</label></div>
     <div class="due">
       <label class="campo"><span>Fotografi richiesti</span><input type="number" min="0" max="9" name="fotografi" value="${e.fotografi}"></label>
       <label class="campo"><span>Stampatori richiesti</span><input type="number" min="0" max="9" name="stampatori" value="${e.stampatori}"></label></div>
@@ -774,8 +784,8 @@ function formPresenze(id){
     <p class="note" style="margin:0 0 6px">Togli la spunta a chi non c'era e correggi l'orario di chi è arrivato tardi o è andato via prima. Per un sostituto: chiudi, aggiungilo con “Assegna persone” e torna qui.</p>
     ${ass.map(x=>{const c=collabById(x.collaboratore_id)||{nome:'?'};
       return `<div class="riga-pres"><label class="spunta" style="margin:0"><input type="checkbox" name="p_${x.id}" ${x.presente===false?'':'checked'}> ${esc(c.nome)} <small class="note">${x.ruolo==='F'?'foto':'stampa'}</small></label>
-        <input type="time" name="i_${x.id}" value="${hm(x.ora_inizio_eff||t.ora_inizio)}" aria-label="Inizio ${esc(c.nome)}">
-        <input type="time" name="f_${x.id}" value="${hm(x.ora_fine_eff||t.ora_fine)}" aria-label="Fine ${esc(c.nome)}"></div>`}).join('')}`,
+        ${selOra('i_'+x.id, x.ora_inizio_eff||t.ora_inizio, {passo:15, label:'Inizio '+c.nome})}
+        ${selOra('f_'+x.id, x.ora_fine_eff||t.ora_fine, {passo:15, label:'Fine '+c.nome})}</div>`}).join('')}`,
   async f=>{
     for(const x of ass){
       const pres=f['p_'+x.id].checked, i=f['i_'+x.id].value, e=f['f_'+x.id].value;
