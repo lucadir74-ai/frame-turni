@@ -357,7 +357,7 @@ function analisiTurno(t){
 function vistaTurni(){
   const m=document.getElementById('main');
   const bozze=S.turni.filter(t=>!t.pubblicato && !t.annullato).length;
-  let h = barraMese(`<button class="btn" onclick="formLinkCalendario()">Link calendario</button><button class="btn" ${bozze?'':'disabled'} onclick="formProponi(false)">Proponi turni</button><button class="btn" ${bozze?'':'disabled'} onclick="pubblicaMese()">Pubblica ${bozze||''} turni in bozza</button><button class="btn" onclick="formModificaBlocco()">Modifica più turni</button><button class="btn pri" onclick="formTurno()">Nuovo evento</button>`);
+  let h = barraMese(`<button class="btn" onclick="formLinkCalendario()">Link calendario</button><button class="btn" ${bozze?'':'disabled'} onclick="formProponi(false)">Proponi squadre</button><button class="btn" ${bozze?'':'disabled'} onclick="pubblicaMese()">Pubblica ${bozze||''} squadre del mese</button><button class="btn" onclick="formModificaBlocco()">Modifica più turni</button><button class="btn pri" onclick="formTurno()">Nuovo evento</button>`);
   if(S.ritiri && S.ritiri.length) h+='<div class="ritiri"><b>Ritiri da gestire</b>'+S.ritiri.map(r=>{const t=r.tp_turni||{}; const c=collabById(r.collaboratore_id)||{nome:'?'};
     return `<div class="rit"><span>${esc(c.nome)} si è ritirato/a da <b>${esc((piscinaById(t.piscina_id)||{nome:'?'}).nome)}</b>, ${t.data?nomeGiorno(t.data):''} ${hm(t.ora_inizio)}–${hm(t.ora_fine)}: era in squadra, il posto è scoperto.</span><button class="btn pic" onclick="ritiroVisto('${r.id}')">Visto</button></div>`}).join('')+'</div>';
   if(!S.piscine.some(p=>p.attiva)){ m.innerHTML=h+'<div class="vuoto">Prima inserisci le sedi nella scheda Sedi, poi potrai creare gli eventi.</div>'; return; }
@@ -386,6 +386,7 @@ function cardEvento(e, turni){
       <div class="note">${e?periodoEvento(e)+(fasce?' · '+fasce:'')+' · '+e.fotografi+' foto + '+e.stampatori+' stampa':'Turni senza evento'}</div></div></div>
     <div class="ev-stat"><span>${turni.length} turni questo mese</span>${validi.length?`<span class="${coperti>=validi.length?'pieno':'manca'}">candidati sufficienti ${coperti}/${validi.length}</span><span>squadre pubblicate ${pubb}/${validi.length}</span>`:''}${ann?`<span class="ko">annullati ${ann}</span>`:''}</div>
     <div class="azioni"><button class="btn pic ${aperto?'':'pri'}" onclick="apriEvento('${key}',${!aperto})">${aperto?'Chiudi giorni':'Apri giorni'}</button>
+      ${e && validi.length>pubb?`<button class="btn pic pri" onclick="pubblicaEvento('${e.id}')">Pubblica squadre (${validi.length-pubb})</button>`:''}
       ${e?`<button class="btn pic" onclick="formEvento('${e.id}')">Modifica evento</button><button class="btn pic del" onclick="eliminaEvento('${e.id}')">Elimina evento</button>`:''}</div>`;
   if(aperto && turni.length){
     h+='<div class="ev-giorni">';
@@ -408,7 +409,7 @@ function cardTurno(t){
           <div class="azioni"><button class="btn pic pri" onclick="ripristinaTurno('${t.id}')">Ripristina</button><button class="btn pic del" onclick="eliminaTurno('${t.id}')">Elimina</button></div></div>`;
         }
         return `<div class="turno ${t.pubblicato?'':'bozza'}">
-          <div class="t-head"><b>${esc(p.nome)}</b>${puntini(p.importanza)}<span class="t-ora">${hm(t.ora_inizio)}–${hm(t.ora_fine)}</span><span class="stato ${t.pubblicato?'':'bozza'}">${t.pubblicato?'Pubblicato':'Bozza'}</span></div>
+          <div class="t-head"><b>${esc(p.nome)}</b>${puntini(p.importanza)}<span class="t-ora">${hm(t.ora_inizio)}–${hm(t.ora_fine)}</span><span class="stato ${t.pubblicato?'':'bozza'}">${t.pubblicato?'Squadra pubblicata':'Squadra da pubblicare'}</span></div>
           <div class="req"><span class="${cls(a.nF,t.fotografi)}">Fotografi ${a.nF}/${t.fotografi}</span><span class="${cls(a.nS,t.stampatori)}">Stampatori ${a.nS}/${t.stampatori}</span></div>
           <div class="chips">${a.ass.map(x=>{const c=collabById(x.collaboratore_id)||{nome:'?'};return `<span class="chip"><span class="r ${x.ruolo}">${x.ruolo==='F'?'FOTO':'STAMPA'}</span>${esc(c.nome)}${c.auto?' 🚗':''}<button title="Togli ${esc(c.nome)}" onclick="togli('${x.id}')">×</button></span>`}).join('')}</div>
           ${t.note?`<div class="note">${esc(t.note)}</div>`:''}
@@ -421,7 +422,7 @@ function cardTurno(t){
             <button class="btn pic" ${a.nS?'':'disabled title="Assegna prima lo stampatore"'} onclick="formLinkIncassi('${t.id}')">Link incassi</button>
             <button class="btn pic" ${a.ass.length?'':'disabled'} onclick="formPresenze('${t.id}')">Presenze</button>
             <button class="btn pic" ${a.ass.length?'':'disabled'} onclick="formCompensi('${t.id}')">Compensi</button>
-            <button class="btn pic" onclick="pubblica('${t.id}',${!t.pubblicato})">${t.pubblicato?'Rimetti in bozza':'Pubblica'}</button>
+            <button class="btn pic" onclick="pubblica('${t.id}',${!t.pubblicato})">${t.pubblicato?'Ritira squadra':'Pubblica squadra'}</button>
             <button class="btn pic" onclick="formTurno('${t.id}')">Modifica giorno</button>
             <button class="btn pic" onclick="formAnnulla('${t.id}')">Annulla turno</button>
             <button class="btn pic del" onclick="eliminaTurno('${t.id}')">Elimina giorno</button>
@@ -544,7 +545,7 @@ function formModificaBlocco(){
     if(!scelti.length){ toast('Nessun turno corrisponde a queste scelte.',true); return false; }
     const ids=scelti.map(t=>t.id), pubb=scelti.filter(t=>t.pubblicato).length;
     const it=x=>x.split('-').reverse().join('/'); const sede=(piscinaById(f.sede.value)||{nome:'?'}).nome;
-    const quali=scelti.length+' turni di '+sede+' dal '+it(f.da.value)+' al '+it(f.a.value)+(pubb?' ('+pubb+' già pubblicati: avvisate i ragazzi)':'');
+    const quali=scelti.length+' turni di '+sede+' dal '+it(f.da.value)+' al '+it(f.a.value)+(pubb?' ('+pubb+' con squadra già pubblicata: avvisate i ragazzi)':'');
     let rec=null;
     if(f.azione.value==='orari'){
       if(!f.ini.value||!f.fin.value||f.fin.value<=f.ini.value){ toast('Inserisci un orario di inizio e una fine successiva.',true); return false; }
@@ -683,7 +684,13 @@ async function eliminaTurno(id){
   if(errore((await sb.from('tp_turni').delete().eq('id',id)).error)) return;
   toast('Turno eliminato.'); ricarica();
 }
-async function pubblica(id,val){ if(errore((await sb.from('tp_turni').update({pubblicato:val}).eq('id',id)).error)) return; toast(val?'Turno pubblicato.':'Turno rimesso in bozza.'); ricarica(); }
+async function pubblica(id,val){ if(errore((await sb.from('tp_turni').update({pubblicato:val}).eq('id',id)).error)) return; toast(val?'Squadra pubblicata.':'Squadra ritirata: i collaboratori non la vedono più.'); ricarica(); }
+async function pubblicaEvento(id){
+  const e=(S.eventi||[]).find(x=>x.id===id); if(!e) return;
+  if(!confirm('Pubblicare le squadre di tutti i turni di “'+e.nome+'”? I collaboratori vedranno chi è in squadra.')) return;
+  if(errore((await sb.from('tp_turni').update({pubblicato:true}).eq('evento_id',id).eq('pubblicato',false).eq('annullato',false)).error)) return;
+  toast('Squadre dell\'evento pubblicate.'); ricarica();
+}
 // ---------- ANNULLO E PRESENZE ----------
 function formAnnulla(id){
   const t=S.turni.find(x=>x.id===id); const p=piscinaById(t.piscina_id)||{nome:'?'};
@@ -791,7 +798,7 @@ function disegnaRiepilogo(){
 
 async function pubblicaMese(){
   const [da,a]=limitiMese(S.mese);
-  if(!confirm('Pubblicare tutti i turni in bozza di '+nomeMese(S.mese)+'? I collaboratori li vedranno.')) return;
+  if(!confirm('Pubblicare le squadre di tutti i turni di '+nomeMese(S.mese)+' non ancora pubblicati? I collaboratori vedranno chi è in squadra.')) return;
   if(errore((await sb.from('tp_turni').update({pubblicato:true}).gte('data',da).lte('data',a).eq('pubblicato',false)).error)) return;
   toast('Turni pubblicati.'); ricarica();
 }
@@ -991,7 +998,7 @@ function formProponi(includi){
   const { nuove, esito } = calcolaProposta(includi);
   const corpo = `
     <label class="spunta"><input type="checkbox" ${includi?'checked':''} onchange="formProponi(this.checked)"> Usa anche chi non si è candidato al turno</label>
-    <p class="note" style="margin:0 0 10px">Riempie solo i posti liberi dei turni in bozza. Chi è già assegnato resta dov'è. Dopo puoi correggere a mano.</p>
+    <p class="note" style="margin:0 0 10px">Riempie solo i posti liberi dei turni con squadra ancora da pubblicare. Chi è già assegnato resta dov'è. Dopo puoi correggere a mano.</p>
     ${esito.length ? esito.map(({t,squadra,aggiunti,avvisi})=>{
       const p=piscinaById(t.piscina_id)||{nome:'?',importanza:1};
       return `<div class="turno bozza" style="margin-bottom:8px">
@@ -999,7 +1006,7 @@ function formProponi(includi){
         <div class="chips" style="margin-top:6px">${squadra.map(x=>{const c=collabById(x.collaboratore_id)||{nome:'?'};const nuovo=aggiunti.includes(x);
           return `<span class="chip" style="padding-right:10px;${nuovo?'border-color:var(--ok);background:#E7F3EC':''}"><span class="r ${x.ruolo}">${x.ruolo==='F'?'FOTO':'STAMPA'}</span>${esc(c.nome)}${c.auto?' 🚗':''}${nuovo?' <small>nuovo</small>':''}</span>`}).join('')||'<span class="note">Nessuno</span>'}</div>
         ${avvisi.length?`<ul class="avvisi">${avvisi.map(v=>'<li>⚠ '+esc(v)+'</li>').join('')}</ul>`:''}
-      </div>`;}).join('') : '<div class="vuoto">Tutti i turni in bozza sono già completi.</div>'}`;
+      </div>`;}).join('') : '<div class="vuoto">Tutti i turni da pubblicare hanno già la squadra completa.</div>'}`;
   apriDialog('Proposta turni ('+nuove.length+' assegnazioni nuove)', corpo, nuove.length ? async ()=>{
     const r = await sb.from('tp_assegnazioni').insert(nuove);
     if(errore(r.error)) return false;
@@ -1019,7 +1026,7 @@ function vistaDisp(){
   let h=barraMese('<span class="note">Le candidature le fanno i collaboratori dal calendario; qui potete aggiungerle o toglierle voi.</span>');
   if(sediMese.length) h+='<div class="sedi">'+sediMese.map(p=>`<button aria-current="${S.sedeDisp===p.id}" onclick="sedeDisp('${p.id}')">${esc(p.nome)}<small>${turniOk.filter(t=>t.piscina_id===p.id).length} turni</small></button>`).join('')
     +(sediMese.length>1?`<button aria-current="${S.sedeDisp==='tutte'}" onclick="sedeDisp('tutte')">Tutte</button>`:'')+'</div>';
-  if(!turniV.length){ m.innerHTML=h+'<div class="vuoto">Nessun turno in questo mese. Inserisci prima i turni (sede, data e orario) nella scheda Turni.</div>'; return; }
+  if(!turniV.length){ m.innerHTML=h+'<div class="vuoto">Nessun turno in questo mese. Inserisci prima i turni (sede, data e orario) nella scheda Eventi.</div>'; return; }
   h+=`<div class="vistab"><button aria-current="${S.candVista!=='tab'}" onclick="candVista('cal')">Calendario</button><button aria-current="${S.candVista==='tab'}" onclick="candVista('tab')">Tabella</button></div>`;
   if(S.candVista!=='tab'){
     const tutti = S.sedeDisp==='tutte' ? S.turni : S.turni.filter(t=>t.piscina_id===S.sedeDisp);   // anche gli annullati, barrati
@@ -1075,7 +1082,7 @@ function renderGC(){
     const altri=S.collab.filter(c=>c.attivo && !k.some(x=>x.collaboratore_id===c.id)).sort((a,b)=>a.nome.localeCompare(b.nome));
     return `<div class="gct" style="border-left:6px solid ${coloreSede(p)}">
       <div class="t-head"><b>${esc(p.nome)}</b><span class="t-ora">${hm(t.ora_inizio)}–${hm(t.ora_fine)}</span>
-        <span class="stato ${t.annullato?'ann':t.pubblicato?'':'bozza'}">${t.annullato?'Annullato':t.pubblicato?'Pubblicato':'Bozza'}</span></div>
+        <span class="stato ${t.annullato?'ann':t.pubblicato?'':'bozza'}">${t.annullato?'Annullato':t.pubblicato?'Squadra pubblicata':'Squadra da pubblicare'}</span></div>
       <div class="note">Servono ${t.fotografi} foto + ${t.stampatori} stampa · candidati <b>${k.length}</b> su ${posti} posti</div>
       ${t.annullato?'':`<div class="gcl">${k.map(x=>{ const c=collabById(x.collaboratore_id)||{nome:'?'}; const sq=S.ass.some(a=>a.turno_id===t.id&&a.collaboratore_id===c.id);
         return `<div class="gcr"><span>${sq?'<b title="In squadra">★</b> ':''}${esc(c.nome)} <small class="note">${RUOLI[c.ruolo]||''} · <span class="stelle">${stelle(c.livello||0)}</span>${c.auto?' · 🚗':''}</small></span>
