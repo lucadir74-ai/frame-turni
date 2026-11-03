@@ -405,7 +405,7 @@ function cardEvento(e, turni){
     <div class="ev-stat"><span>${turni.length} turni questo mese</span>${validi.length?`<span class="${coperti>=validi.length?'pieno':'manca'}">candidati sufficienti ${coperti}/${validi.length}</span><span>squadre pubblicate ${pubb}/${validi.length}</span>`:''}${ann?`<span class="ko">annullati ${ann}</span>`:''}</div>
     <div class="azioni"><button class="btn pic ${aperto?'':'pri'}" onclick="apriEvento('${key}',${!aperto})">${aperto?'Nascondi turni':'Mostra turni'}</button>
       ${e && validi.length>pubb?`<button class="btn pic pri" onclick="pubblicaEvento('${e.id}')">Pubblica squadre (${validi.length-pubb})</button>`:''}
-      ${e?`<details class="menu"><summary class="btn pic" aria-label="Altre azioni">⋯</summary><div class="menu-b"><button class="btn pic" onclick="formEvento('${e.id}')">Modifica evento</button><button class="btn pic del" onclick="eliminaEvento('${e.id}')">Elimina evento</button></div></details>`:''}</div>`;
+      ${e?`<button class="btn pic" onclick="formEvento('${e.id}')">Modifica evento</button><details class="menu"><summary class="btn pic" aria-label="Altre azioni">⋯</summary><div class="menu-b"><button class="btn pic del" onclick="eliminaEvento('${e.id}')">Elimina evento</button></div></details>`:''}</div>`;
   if(aperto && turni.length) h+='<div class="ev-giorni">'+turni.map(rigaTurno).join('')+'</div>';
   return h+'</div>';
 }
