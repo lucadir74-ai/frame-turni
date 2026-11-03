@@ -77,6 +77,10 @@ main{max-width:1100px;margin:0 auto;padding:16px}
 .rg.ann{opacity:.6}.rg.ann .gg,.rg.ann .or{text-decoration:line-through}
 .menu{position:relative}.menu summary{list-style:none;cursor:pointer}.menu summary::-webkit-details-marker{display:none}
 .menu-b{position:absolute;z-index:5;top:100%;left:0;margin-top:4px;display:flex;flex-direction:column;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px;box-shadow:0 4px 14px rgba(0,0,0,.12);white-space:nowrap}
+.cands{margin:10px 0}.cands-h{font-weight:600;font-size:.9rem;margin-bottom:4px}
+.cd{display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid var(--line)}.cd .sp{flex:1}
+.cs{font-size:.78rem;font-weight:600;padding:2px 10px;border-radius:99px;white-space:nowrap}
+.cs.ok{background:#E7F3EC;color:var(--ok)}.cs.att{background:#FDF0E6;color:var(--warn)}
 #dlg .turno{margin:0;border:0;border-left:0;padding:0}
 .ritiri{background:#FBE9EA;border:1px solid #F0C4C7;border-radius:10px;padding:10px 14px;margin:0 0 14px;color:var(--red)}
 .ritiri .rit{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:6px;color:var(--ink)}
@@ -746,9 +750,12 @@ function oreAss(x,t){ if(x.presente!==true) return 0; return Math.max(0, minuti(
 function fmtOre(h){ return (Math.round(h*10)/10).toLocaleString('it-IT')+' h'; }
 function rigaCandidati(t){
   const k=S.cand.filter(x=>x.turno_id===t.id); const posti=(t.fotografi||0)+(t.stampatori||0);
-  if(!k.length) return '<div class="note">Nessun candidato</div>';
-  const fuori=k.filter(x=>!S.ass.some(a=>a.turno_id===t.id&&a.collaboratore_id===x.collaboratore_id));
-  return `<div class="note">Candidati: <b>${k.length}</b> per ${posti} posti${fuori.length?' · non in squadra: '+fuori.map(x=>esc((collabById(x.collaboratore_id)||{nome:'?'}).nome)).join(', '):''}</div>`;
+  if(!k.length) return '<div class="note">Nessun candidato per ora</div>';
+  const inSq=x=>S.ass.some(a=>a.turno_id===t.id&&a.collaboratore_id===x.collaboratore_id);
+  const righe=[...k].sort((x,y)=>inSq(x)-inSq(y)).map(x=>{ const c=collabById(x.collaboratore_id)||{nome:'?',ruolo:'F'}, sq=inSq(x);
+    return `<div class="cd"><b>${esc(c.nome)}</b><span class="tag">${RUOLI[c.ruolo]||''}</span>${c.auto?'<span title="Ha la macchina">🚗</span>':''}<span class="sp"></span><span class="cs ${sq?'ok':'att'}">${sq?'In squadra':'Da scegliere'}</span></div>`; }).join('');
+  const attesa=k.filter(x=>!inSq(x)).length;
+  return `<div class="cands"><div class="cands-h">Candidati: ${k.length} · posti da coprire: ${posti}</div>${righe}${attesa?'<div class="note">“Da scegliere” = si è candidato ma non è ancora in squadra: usa “Assegna persone”.</div>':''}</div>`;
 }
 function rigaPresenze(t,a){
   if(!a.ass.length) return '';
