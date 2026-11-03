@@ -349,6 +349,12 @@ function avvisoRitiro(t){
   document.body.appendChild(d);
 }
 
+// tornando sulla pagina (es. dopo aver usato altre app) rilegge i turni, così si vede subito la squadra pubblicata
+document.addEventListener('visibilitychange', async ()=>{
+  if(document.visibilityState!=='visible' || !sb || !S.io || document.querySelector('.velo')) return;
+  const y=window.scrollY; await ricarica(); aggiorna(); window.scrollTo(0,y);
+});
+
 avvio();
 </script>
 </body>
