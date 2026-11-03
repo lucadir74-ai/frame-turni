@@ -67,6 +67,17 @@ main{max-width:1100px;margin:0 auto;padding:16px}
 .turno.annullato{border-left-color:var(--red);background:#FAFAFA}
 .turno.annullato .t-head b,.turno.annullato .t-ora{text-decoration:line-through;color:var(--muted)}
 .stato.ann{background:#FBE9EA;color:var(--red)}
+.rg{display:flex;flex-wrap:wrap;align-items:center;gap:4px 14px;width:100%;text-align:left;background:none;border:0;border-top:1px solid var(--line);padding:10px 4px;cursor:pointer;font-size:.92rem}
+.rg:hover{background:var(--tile)}
+.rg .gg{font-weight:700;min-width:6.5em;text-transform:capitalize}
+.rg .or{color:var(--muted);font-variant-numeric:tabular-nums;min-width:9.5em}
+.rg .pp{color:var(--muted)}
+.rg .pieno{color:var(--ok);font-weight:600}.rg .manca{color:var(--warn);font-weight:600}
+.rg .sp{flex:1}.rg .chev{color:var(--muted);font-size:1.2rem;line-height:1}
+.rg.ann{opacity:.6}.rg.ann .gg,.rg.ann .or{text-decoration:line-through}
+.menu{position:relative}.menu summary{list-style:none;cursor:pointer}.menu summary::-webkit-details-marker{display:none}
+.menu-b{position:absolute;z-index:5;top:100%;left:0;margin-top:4px;display:flex;flex-direction:column;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px;box-shadow:0 4px 14px rgba(0,0,0,.12);white-space:nowrap}
+#dlg .turno{margin:0;border:0;border-left:0;padding:0}
 .ritiri{background:#FBE9EA;border:1px solid #F0C4C7;border-radius:10px;padding:10px 14px;margin:0 0 14px;color:var(--red)}
 .ritiri .rit{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:6px;color:var(--ink)}
 .griglia .fx button.sq{border-color:var(--water);background:var(--water);color:#fff}
@@ -322,6 +333,9 @@ function disegna(){
   </header>
   <main id="main"></main>`;
   ({turni:vistaTurni, disponibilita:vistaDisp, collaboratori:vistaCollab, piscine:vistaPiscine, riepilogo:vistaRiepilogo})[S.tab]();
+  // se il dettaglio di un turno è aperto, lo aggiorna con i dati nuovi (o lo chiude se il turno non esiste più)
+  const d=document.getElementById('dlg');
+  if(d.open && d.dataset.tipo==='turno'){ const t=S.turni.find(x=>x.id===S.turnoAperto); if(t) d.querySelector('.dlg-b').innerHTML=cardTurno(t); else chiudiDialog(); }
 }
 // cambiando scheda rilegge i dati, così si vedono subito le candidature fatte dai ragazzi
 async function vai(k){ S.tab=k; if(k==='turni'||k==='disponibilita'){ await caricaMese(); } disegna(); }
@@ -376,7 +390,7 @@ function cardEvento(e, turni){
   const p = piscinaById(e ? e.piscina_id : turni[0]?.piscina_id) || {nome:'?'};
   const key = e ? e.id : 'senza';
   if(!S.aperti) S.aperti={};
-  const aperto = key in S.aperti ? S.aperti[key] : turni.length<=4;
+  const aperto = key in S.aperti ? S.aperti[key] : turni.length<=8;
   const validi=turni.filter(t=>!t.annullato), ann=turni.length-validi.length;
   const coperti=validi.filter(t=>S.cand.filter(k=>k.turno_id===t.id).length >= (t.fotografi||0)+(t.stampatori||0)).length;
   const pubb=validi.filter(t=>t.pubblicato).length;
@@ -385,16 +399,34 @@ function cardEvento(e, turni){
     <div class="ev-head"><div><b>${esc(e?.nome||p.nome)}</b>${e && e.nome && e.nome!==p.nome?` <span class="note">${esc(p.nome)}</span>`:''}
       <div class="note">${e?periodoEvento(e)+(fasce?' · '+fasce:'')+' · '+e.fotografi+' foto + '+e.stampatori+' stampa':'Turni senza evento'}</div></div></div>
     <div class="ev-stat"><span>${turni.length} turni questo mese</span>${validi.length?`<span class="${coperti>=validi.length?'pieno':'manca'}">candidati sufficienti ${coperti}/${validi.length}</span><span>squadre pubblicate ${pubb}/${validi.length}</span>`:''}${ann?`<span class="ko">annullati ${ann}</span>`:''}</div>
-    <div class="azioni"><button class="btn pic ${aperto?'':'pri'}" onclick="apriEvento('${key}',${!aperto})">${aperto?'Chiudi giorni':'Apri giorni'}</button>
+    <div class="azioni"><button class="btn pic ${aperto?'':'pri'}" onclick="apriEvento('${key}',${!aperto})">${aperto?'Nascondi turni':'Mostra turni'}</button>
       ${e && validi.length>pubb?`<button class="btn pic pri" onclick="pubblicaEvento('${e.id}')">Pubblica squadre (${validi.length-pubb})</button>`:''}
-      ${e?`<button class="btn pic" onclick="formEvento('${e.id}')">Modifica evento</button><button class="btn pic del" onclick="eliminaEvento('${e.id}')">Elimina evento</button>`:''}</div>`;
-  if(aperto && turni.length){
-    h+='<div class="ev-giorni">';
-    [...new Set(turni.map(t=>t.data))].forEach(g=>{ const tg=turni.filter(t=>t.data===g);
-      h+=`<div class="giorno">${nomeGiorno(g)} <small>${tg.length} ${tg.length===1?'turno':'turni'}</small></div>`+tg.map(cardTurno).join(''); });
-    h+='</div>';
-  }
+      ${e?`<details class="menu"><summary class="btn pic" aria-label="Altre azioni">⋯</summary><div class="menu-b"><button class="btn pic" onclick="formEvento('${e.id}')">Modifica evento</button><button class="btn pic del" onclick="eliminaEvento('${e.id}')">Elimina evento</button></div></details>`:''}</div>`;
+  if(aperto && turni.length) h+='<div class="ev-giorni">'+turni.map(rigaTurno).join('')+'</div>';
   return h+'</div>';
+}
+// una riga per turno: il dettaglio con tutti i bottoni si apre toccandola
+function rigaTurno(t){
+  const a=analisiTurno(t), nc=S.cand.filter(k=>k.turno_id===t.id).length;
+  const [y,m,g]=t.data.split('-').map(Number);
+  const giorno=new Date(y,m-1,g).toLocaleDateString('it-IT',{weekday:'short',day:'numeric',month:'short'});
+  const fascia=hm(t.ora_inizio)<'13:00'?'Mattina':'Pomeriggio';
+  const ore=fascia+' '+hm(t.ora_inizio)+'–'+hm(t.ora_fine);
+  if(t.annullato) return `<button class="rg ann" onclick="apriTurno('${t.id}')"><span class="gg">${giorno}</span><span class="or">${ore}</span><span class="stato ann">Annullato${t.motivo_annullo?' · '+esc(t.motivo_annullo):''}</span><span class="sp"></span><span class="chev">›</span></button>`;
+  const cls=(n,r)=> n>=r ? 'pieno' : 'manca';
+  const daConf = t.data<=oggi() && a.ass.length && !t.presenze_ok;
+  return `<button class="rg" onclick="apriTurno('${t.id}')"><span class="gg">${giorno}</span><span class="or">${ore}</span>
+    <span class="${cls(a.nF,t.fotografi)}">Foto ${a.nF}/${t.fotografi}</span><span class="${cls(a.nS,t.stampatori)}">Stampa ${a.nS}/${t.stampatori}</span>
+    <span class="pp">${nc} ${nc===1?'candidato':'candidati'}</span>
+    ${a.avvisi.length?'<span class="manca" title="'+esc(a.avvisi.join('; '))+'">⚠</span>':''}${daConf?'<span class="manca">presenze?</span>':''}
+    <span class="sp"></span><span class="stato ${t.pubblicato?'':'bozza'}">${t.pubblicato?'Pubblicata':'Da pubblicare'}</span><span class="chev">›</span></button>`;
+}
+function apriTurno(id){
+  const t=S.turni.find(x=>x.id===id); if(!t) return;
+  S.turnoAperto=id;
+  const p=piscinaById(t.piscina_id)||{nome:'?'};
+  apriDialog(p.nome+' · '+nomeGiorno(t.data), cardTurno(t), null, null, 'Chiudi');
+  document.getElementById('dlg').dataset.tipo='turno';
 }
 function apriEvento(k,v){ S.aperti[k]=v; vistaTurni(); }
 
@@ -1201,6 +1233,9 @@ async function eliminaPiscina(id){
 // ---------- finestra di dialogo ----------
 function apriDialog(titolo, corpo, onSave, etichetta, chiudiTesto){
   const d=document.getElementById('dlg');
+  // una finestra aperta sopra il dettaglio di un turno, alla chiusura riporta al dettaglio
+  d.dataset.dopo = d.open && (d.dataset.tipo==='turno' || d.dataset.dopo==='turno') ? 'turno' : '';
+  d.dataset.tipo = '';
   d.innerHTML = `<form method="dialog" id="df">
     <div class="dlg-h">${esc(titolo)}<button type="button" class="btn pic" onclick="chiudiDialog()" aria-label="Chiudi">×</button></div>
     <div class="dlg-b">${corpo}</div>
@@ -1214,7 +1249,13 @@ function apriDialog(titolo, corpo, onSave, etichetta, chiudiTesto){
   };
   if(!d.open) d.showModal();
 }
-function chiudiDialog(){ const d=document.getElementById('dlg'); if(d.open) d.close(); }
+function chiudiDialog(){
+  const d=document.getElementById('dlg'); const torna = d.dataset.dopo==='turno' ? S.turnoAperto : null;
+  d.dataset.dopo='';
+  if(d.open) d.close();
+  if(torna) apriTurno(torna);
+}
+document.getElementById('dlg').addEventListener('close', ()=>{ const d=document.getElementById('dlg'); if(!d.open && d.dataset.tipo==='turno') S.turnoAperto=null; });
 
 avvio();
 </script>
