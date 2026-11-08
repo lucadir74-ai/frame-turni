@@ -193,7 +193,36 @@ dialog::backdrop{background:rgba(18,48,58,.45)}
 .login p{color:var(--muted);margin:0 0 18px}
 #toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:8px;font-size:.92rem;display:none;z-index:50;max-width:92vw}
 #toast.err{background:var(--red)}
-@media (max-width:560px){ .due{grid-template-columns:1fr} .barra .mese{min-width:auto} }
+/* calendario posti dell'evento */
+dialog.largo{width:min(760px,96vw)}
+.ecb{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 10px}
+.ecm{font:700 1rem var(--fc);text-transform:capitalize;margin:14px 0 6px}
+.ecal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px}
+.ecal .wd{text-align:center;font:600 .72rem var(--fc);color:var(--muted)}
+.ecal .eg{background:var(--card);border:1px solid var(--line);border-radius:8px;min-height:58px;padding:3px 4px;display:flex;flex-direction:column;gap:2px;text-align:left;min-width:0;position:relative}
+.ecal .eg.nul{background:transparent;border-color:transparent}
+.ecal .eg.fuori{background:#F8F8F9;color:#B5B6B9}
+.ecal button.eg:hover{border-color:var(--water)}
+.ecal .eg.sel{border:2px solid var(--water);background:var(--water-soft)}
+.ecal .eg.mod::after{content:'';position:absolute;top:4px;right:4px;width:6px;height:6px;border-radius:50%;background:var(--warn)}
+.ecal .n{font:700 .8rem var(--fc)}
+.ecal .tr{display:flex;align-items:center;gap:2px;font:700 .66rem var(--fc);color:var(--muted);white-space:nowrap;overflow:hidden}
+.ecal .tr.ann{text-decoration:line-through;opacity:.6}
+.po{display:inline-block;width:7px;height:7px;border-radius:2px;border:1.5px solid var(--water);background:var(--water);flex:0 0 auto}
+.po.S{border-color:var(--grigio);background:var(--grigio)}
+.po.x{background:transparent;opacity:.5}
+.pos{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.pos button{border:2px solid var(--water);background:var(--water);color:#fff;border-radius:10px;padding:8px 10px;font-weight:600;min-width:7.5em;text-align:left;line-height:1.2}
+.pos button.S{border-color:var(--grigio);background:var(--grigio)}
+.pos button.x{background:#fff;color:var(--muted);border-style:dashed}
+.pos button small{display:block;font-weight:500;font-size:.75rem;opacity:.9}
+.ecsel{position:sticky;bottom:-16px;background:var(--card);border-top:2px solid var(--water);padding:8px 0 12px;margin-top:12px;box-shadow:0 -6px 10px rgba(0,0,0,.06)}
+.ecsel label{display:inline-flex;align-items:center;gap:4px;font-weight:600;font-size:.9rem}
+.ecgt{border:1px solid var(--line);border-left:6px solid var(--water);border-radius:10px;padding:10px 12px;margin-bottom:10px}
+.ecgt.ann{border-left-color:var(--red);background:#FAFAFA}
+.ecr{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px}
+.ecr select,.ecr input{border:1px solid var(--line);border-radius:6px;padding:5px;font:inherit}
+@media (max-width:560px){ .due{grid-template-columns:1fr} .barra .mese{min-width:auto} .ecal .eg{min-height:52px;padding:2px} .ecal .tr{gap:1px;font-size:.6rem} .ecal .tr span{display:none} .ecal .po{width:5px;height:5px;border-width:1px} .ecsel .note{display:none} }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -244,8 +273,52 @@ const PALETTE=['#EB0089','#1E6FD9','#E07B00','#2E9D5B','#7B3FC4','#00A3A3','#C83
 function coloreSede(p){ if(p && p.colore) return p.colore; if(!p){ const usati=S.piscine.map(x=>x.colore); const libero=PALETTE.find(c=>!usati.includes(c)); if(libero) return libero; } let h=0; for(const ch of String(p?.id||'')) h=(h*31+ch.charCodeAt(0))>>>0; return PALETTE[h%PALETTE.length]; }
 
 function minuti(s){ const [h,m]=hm(s).split(':').map(Number); return h*60+(m||0); }
-// fascia di un turno: decide l'orario di inizio (prima delle 13 = mattina, dalle 13 = sera); oltre 8 ore li chiede tutti e due
-function fasceTurno(t){ if(minuti(t.ora_fine)-minuti(t.ora_inizio)>480) return ['M','P']; return [hm(t.ora_inizio)<'13:00'?'M':'P']; }
+// fascia di un turno: G = tutto il giorno (inizia prima delle 13 e finisce dalle 15 in poi), M = mattina (inizia prima delle 13), P = pomeriggio (dalle 13)
+// (stessa regola in calendario.html)
+function fasciaDi(t){ const i=hm(t.ora_inizio), f=hm(t.ora_fine); return i<'13:00' ? (f>='15:00'?'G':'M') : 'P'; }
+const NOMI_FASCIA={ M:'Mattina', P:'Pomeriggio', G:'Tutto il giorno' };
+const ORDINE_FASCIA={ M:0, G:1, P:2 };
+// modalità dell'evento: 'mp' = mattina e/o pomeriggio, 'giorno' = un turno unico (orari in m_inizio/m_fine)
+// se la colonna modalita non c'è ancora nel database, la deduce dagli orari
+function modoEvento(e){ if(e && e.modalita) return e.modalita; return e && e.m_inizio && !e.p_inizio && hm(e.m_inizio)<'13:00' && hm(e.m_fine)>='15:00' ? 'giorno' : 'mp'; }
+function fasceEvento(e){
+  if(modoEvento(e)==='giorno') return e.m_inizio ? { G:[hm(e.m_inizio),hm(e.m_fine)] } : {};
+  const o={}; if(e.m_inizio) o.M=[hm(e.m_inizio),hm(e.m_fine)]; if(e.p_inizio) o.P=[hm(e.p_inizio),hm(e.p_fine)]; return o;
+}
+function testoFasce(e){
+  const fe=fasceEvento(e);
+  return ['M','G','P'].filter(k=>fe[k]).map(k=>(k==='G'?'tutto il giorno ':NOMI_FASCIA[k].toLowerCase()+' ')+fe[k][0]+'–'+fe[k][1]).join(' · ');
+}
+const siSovrappone = (a,b) => hm(a.ora_inizio)<hm(b.ora_fine) && hm(b.ora_inizio)<hm(a.ora_fine);
+// salva un evento provando con la colonna "modalita"; se il database non l'ha ancora, salva senza (la modalità si deduce dagli orari)
+async function salvaEventoDb(rec, id){
+  const q = r => id ? sb.from('tp_eventi').update(r).eq('id',id).select().single() : sb.from('tp_eventi').insert(r).select().single();
+  let res = await q(rec);
+  if(res.error && /modalita/i.test(res.error.message||'')){ const { modalita, ...resto } = rec; res = await q(resto); }
+  return res;
+}
+// controlla gli orari di un evento/giorno; restituisce {M,P} oppure {G}, o un messaggio di errore
+function leggiFasce(modo, v){
+  const nf={};
+  if(modo==='giorno'){
+    const [i,fi]=v.G||[];
+    if(!i||!fi||fi<=i) return 'Controlla gli orari di inizio e fine.';
+    if(i>='13:00'||fi<'15:00') return 'Per “tutto il giorno” l\'orario deve iniziare prima delle 13 e finire dalle 15 in poi (altrimenti usa mattina o pomeriggio).';
+    nf.G=[i,fi]; return nf;
+  }
+  for(const [k,nome] of [['M','mattina'],['P','pomeriggio']]){
+    const [i,fi]=v[k]||[];
+    if(!i&&!fi) continue;
+    if(!i||!fi||fi<=i) return 'Controlla gli orari del '+nome+'.';
+    nf[k]=[i,fi];
+  }
+  if(!nf.M && !nf.P) return 'Serve almeno la mattina o il pomeriggio.';
+  if(nf.M && nf.M[0]>='13:00') return 'La mattina deve iniziare prima delle 13.';
+  if(nf.M && nf.M[1]>='15:00') return 'La mattina deve finire prima delle 15 (per un turno unico scegli “tutto il giorno”).';
+  if(nf.P && nf.P[0]<'13:00') return 'Il pomeriggio deve iniziare dalle 13 in poi.';
+  if(nf.M && nf.P && nf.P[0]<nf.M[1]) return 'Il pomeriggio deve iniziare dopo la fine della mattina.';
+  return nf;
+}
 
 // ---------- accesso ----------
 async function avvio(){
@@ -408,14 +481,14 @@ function cardEvento(e, turni){
   const validi=turni.filter(t=>!t.annullato), ann=turni.length-validi.length;
   const coperti=validi.filter(t=>S.cand.filter(k=>k.turno_id===t.id).length >= (t.fotografi||0)+(t.stampatori||0)).length;
   const pubb=validi.filter(t=>t.pubblicato).length;
-  const fasce=e ? [e.m_inizio?'mattina '+hm(e.m_inizio)+'–'+hm(e.m_fine):'', e.p_inizio?'pomeriggio '+hm(e.p_inizio)+'–'+hm(e.p_fine):''].filter(Boolean).join(' · ') : '';
+  const fasce=e ? testoFasce(e) : '';
   let h=`<div class="evento" style="--c:${coloreSede(p)}">
     <div class="ev-head"><div><b>${esc(e?.nome||p.nome)}</b>${e && e.nome && e.nome!==p.nome?` <span class="note">${esc(p.nome)}</span>`:''}
       <div class="note">${e?periodoEvento(e)+(fasce?' · '+fasce:'')+' · '+e.fotografi+' foto + '+e.stampatori+' stampa':'Turni senza evento'}</div></div></div>
     <div class="ev-stat"><span>${turni.length} turni questo mese</span>${validi.length?`<span class="${coperti>=validi.length?'pieno':'manca'}">candidati sufficienti ${coperti}/${validi.length}</span><span>squadre pubblicate ${pubb}/${validi.length}</span>`:''}${ann?`<span class="ko">annullati ${ann}</span>`:''}</div>
     <div class="azioni"><button class="btn pic ${aperto?'':'pri'}" onclick="apriEvento('${key}',${!aperto})">${aperto?'Nascondi turni':'Mostra turni'}</button>
       ${e && validi.length>pubb?`<button class="btn pic pri" onclick="pubblicaEvento('${e.id}')">Pubblica squadre (${validi.length-pubb})</button>`:''}
-      ${e?`<button class="btn pic" onclick="formEvento('${e.id}')">Modifica evento</button><details class="menu"><summary class="btn pic" aria-label="Altre azioni">⋯</summary><div class="menu-b"><button class="btn pic del" onclick="eliminaEvento('${e.id}')">Elimina evento</button></div></details>`:''}</div>`;
+      ${e?`<button class="btn pic" onclick="apriCalEvento('${e.id}')">Calendario posti</button><button class="btn pic" onclick="formEvento('${e.id}')">Modifica evento</button><details class="menu"><summary class="btn pic" aria-label="Altre azioni">⋯</summary><div class="menu-b"><button class="btn pic del" onclick="eliminaEvento('${e.id}')">Elimina evento</button></div></details>`:''}</div>`;
   if(aperto && turni.length) h+='<div class="ev-giorni">'+[...new Set(turni.map(t=>t.data))].map(g=>{
     const [y,m,d]=g.split('-').map(Number), giorno=new Date(y,m-1,d).toLocaleDateString('it-IT',{weekday:'short',day:'numeric',month:'short'});
     return `<div class="gr"><div class="gr-d">${giorno}</div><div class="gr-t">${turni.filter(t=>t.data===g).map(rigaTurno).join('')}</div></div>`; }).join('')+'</div>';
@@ -424,8 +497,7 @@ function cardEvento(e, turni){
 // una riga per turno: il dettaglio con tutti i bottoni si apre toccandola
 function rigaTurno(t){
   const a=analisiTurno(t), nc=S.cand.filter(k=>k.turno_id===t.id).length;
-  const fascia=hm(t.ora_inizio)<'13:00'?'Mattina':'Pomeriggio';
-  const ore=fascia+' '+hm(t.ora_inizio)+'–'+hm(t.ora_fine);
+  const ore=NOMI_FASCIA[fasciaDi(t)]+' '+hm(t.ora_inizio)+'–'+hm(t.ora_fine);
   if(t.annullato) return `<button class="rg ann" onclick="apriTurno('${t.id}')"><span class="or">${ore}</span><span class="stato ann">Annullato${t.motivo_annullo?' · '+esc(t.motivo_annullo):''}</span><span class="sp"></span><span class="chev">›</span></button>`;
   const cls=(n,r)=> n>=r ? 'pieno' : 'manca';
   const daConf = t.data<=oggi() && a.ass.length && !t.presenze_ok;
@@ -475,6 +547,38 @@ function cardTurno(t){
           </div></div>`;
 }
 
+// scelta "mattina + pomeriggio" oppure "tutto il giorno", con i rispettivi orari (usata in Nuovo evento e Modifica evento)
+function campiModalita(modo, fe){
+  const g=fe.G || [fe.M?fe.M[0]:'10:00', fe.P?fe.P[1]:'20:00'];
+  const mostra=m=>modo===m?'':'style="display:none"';
+  return `<label class="campo"><span>Come sono i turni</span><select name="modo" onchange="for(const x of this.form.querySelectorAll('[data-modo]')) x.style.display = x.dataset.modo===this.value?'':'none'">
+      <option value="mp" ${modo==='mp'?'selected':''}>Mattina + pomeriggio (due turni al giorno)</option>
+      <option value="giorno" ${modo==='giorno'?'selected':''}>Tutto il giorno (un turno unico)</option></select></label>
+    <div data-modo="mp" ${mostra('mp')}>
+      <p class="note" style="margin:0 0 6px"><b>Mattina</b> (lascia vuoto se non c'è)</p>
+      <div class="due">
+        <label class="campo"><span>Inizio</span>${selOra('m_inizio',fe.M?fe.M[0]:'',{vuoto:true})}</label>
+        <label class="campo"><span>Fine</span>${selOra('m_fine',fe.M?fe.M[1]:'',{vuoto:true})}</label></div>
+      <p class="note" style="margin:0 0 6px"><b>Pomeriggio</b> (lascia vuoto se non c'è)</p>
+      <div class="due">
+        <label class="campo"><span>Inizio</span>${selOra('p_inizio',fe.P?fe.P[0]:'',{vuoto:true})}</label>
+        <label class="campo"><span>Fine</span>${selOra('p_fine',fe.P?fe.P[1]:'',{vuoto:true})}</label></div>
+      <p class="note" style="margin:-4px 0 12px">Con mattina e pomeriggio si creano due turni per ogni giorno, così i ragazzi possono candidarsi a una sola metà o a tutte e due.</p>
+    </div>
+    <div data-modo="giorno" ${mostra('giorno')}>
+      <div class="due">
+        <label class="campo"><span>Dalle</span>${selOra('g_inizio',g[0])}</label>
+        <label class="campo"><span>Alle</span>${selOra('g_fine',g[1])}</label></div>
+      <p class="note" style="margin:-4px 0 12px">Un solo turno per giorno, dall'apertura alla chiusura. Nel calendario posti si possono poi cambiare gli orari di singoli giorni o dividerli in mattina e pomeriggio.</p>
+    </div>`;
+}
+function fasceDalForm(f){ return leggiFasce(f.modo.value, { M:[f.m_inizio.value,f.m_fine.value], P:[f.p_inizio.value,f.p_fine.value], G:[f.g_inizio.value,f.g_fine.value] }); }
+function recFasce(modo, nf){
+  return modo==='giorno'
+    ? { modalita:'giorno', m_inizio:nf.G[0], m_fine:nf.G[1], p_inizio:null, p_fine:null }
+    : { modalita:'mp', m_inizio:nf.M?nf.M[0]:null, m_fine:nf.M?nf.M[1]:null, p_inizio:nf.P?nf.P[0]:null, p_fine:nf.P?nf.P[1]:null };
+}
+
 function formTurno(id){
   const t = id ? S.turni.find(x=>x.id===id) : null;
   const [da,a]=limitiMese(S.mese); const o=oggi();
@@ -483,15 +587,7 @@ function formTurno(id){
   const orari = t ? `<div class="due">
       <label class="campo"><span>Inizio</span>${selOra('ora_inizio',t.ora_inizio)}</label>
       <label class="campo"><span>Fine</span>${selOra('ora_fine',t.ora_fine)}</label></div>`
-    : `<p class="note" style="margin:0 0 6px"><b>Mattina</b></p>
-    <div class="due">
-      <label class="campo"><span>Inizio</span>${selOra('m_inizio','09:00',{vuoto:true})}</label>
-      <label class="campo"><span>Fine</span>${selOra('m_fine','13:00',{vuoto:true})}</label></div>
-    <p class="note" style="margin:0 0 6px"><b>Pomeriggio</b> (facoltativo)</p>
-    <div class="due">
-      <label class="campo"><span>Inizio</span>${selOra('p_inizio','',{vuoto:true})}</label>
-      <label class="campo"><span>Fine</span>${selOra('p_fine','',{vuoto:true})}</label></div>
-    <p class="note" style="margin:-4px 0 12px">Compilando mattina e pomeriggio si creano due turni per ogni giorno, così i ragazzi possono candidarsi a una sola metà o a tutte e due. Lascia vuota una delle due se serve un turno solo.</p>`;
+    : campiModalita('mp', {M:['09:00','13:00']});
   apriDialog(t?'Modifica giorno':'Nuovo evento', `
     ${t?'':'<label class="campo"><span>Nome evento (facoltativo)</span><input name="nome" placeholder="es. Christmas World 2026 — se vuoto, il nome della sede"></label>'}
     <label class="campo"><span>Sede</span><select name="piscina_id" required>${opz}</select></label>
@@ -503,9 +599,10 @@ function formTurno(id){
     <p class="note" style="margin:-4px 0 12px">Con “Fino al” si creano i turni per ogni giorno, dal primo all’ultimo compresi. I giorni di chiusura poi si eliminano uno per uno.</p>`}
     ${orari}
     <div class="due">
-      <label class="campo"><span>Fotografi richiesti</span><input type="number" min="0" max="9" name="fotografi" value="${t?t.fotografi:1}" required></label>
-      <label class="campo"><span>Stampatori richiesti</span><input type="number" min="0" max="9" name="stampatori" value="${t?t.stampatori:1}" required></label>
+      <label class="campo"><span>Fotografi richiesti</span><input type="number" min="0" max="9" name="fotografi" value="${t?t.fotografi:2}" required></label>
+      <label class="campo"><span>Stampatori richiesti</span><input type="number" min="1" max="9" name="stampatori" value="${t?t.stampatori:2}" required></label>
     </div>
+    ${t?'':'<p class="note" style="margin:-4px 0 12px">Sono i posti di ogni turno (di solito 2 foto + 2 stampa). Poi, nel “Calendario posti” dell\'evento, si chiudono i posti che non servono nei singoli giorni.</p>'}
     <label class="campo"><span>Note</span><textarea name="note" rows="2">${esc(t?.note)}</textarea></label>`,
   async f=>{
     const base={ piscina_id:f.piscina_id.value, fotografi:+f.fotografi.value, stampatori:+f.stampatori.value, note:f.note.value.trim()||null };
@@ -516,16 +613,11 @@ function formTurno(id){
       if(rec.data.slice(0,7)!==S.mese) S.mese=rec.data.slice(0,7);
       toast('Turno salvato.'); await ricarica(); return;
     }
-    // fasce compilate (mattina e/o pomeriggio)
-    const fasce=[];
-    for(const [i,e,nome] of [[f.m_inizio.value,f.m_fine.value,'mattina'],[f.p_inizio.value,f.p_fine.value,'pomeriggio']]){
-      if(!i && !e) continue;
-      if(!i || !e){ toast('Completa inizio e fine del '+nome+'.',true); return false; }
-      if(e<=i){ toast('Nel '+nome+' l\'ora di fine deve essere dopo l\'inizio.',true); return false; }
-      fasce.push([i,e]);
-    }
-    if(!fasce.length){ toast('Inserisci almeno gli orari della mattina o del pomeriggio.',true); return false; }
-    if(fasce.length===2 && fasce[1][0]<fasce[0][1]){ toast('Il pomeriggio deve iniziare dopo la fine della mattina.',true); return false; }
+    if(base.stampatori<1){ toast('Ogni turno deve avere almeno uno stampatore.',true); return false; }
+    // fasce compilate: mattina e/o pomeriggio, oppure tutto il giorno
+    const nf=fasceDalForm(f);
+    if(typeof nf==='string'){ toast(nf,true); return false; }
+    const fasce=['M','G','P'].filter(k=>nf[k]).map(k=>nf[k]);
     const primo=f.data.value, fine=f.data_fine.value||primo;
     if(fine<primo){ toast('“Fino al” deve essere dopo il primo giorno.',true); return false; }
     const date=[]; const d=new Date(primo+'T12:00:00Z');
@@ -543,9 +635,8 @@ function formTurno(id){
       if(!confirm('Creo l\'evento con '+nuovi.length+' turni ('+fasce.map(([i,e])=>i+'–'+e).join(' e ')+'), dal '+it(primo)+' al '+it(fine)+(saltati?' (salto '+saltati+' turni già presenti)':'')+'. Procedo?')) return false;
     }
     const evRec={ piscina_id:base.piscina_id, nome:f.nome.value.trim()||(piscinaById(base.piscina_id)||{}).nome||null, data_inizio:primo, data_fine:fine,
-      m_inizio:f.m_inizio.value||null, m_fine:f.m_fine.value||null, p_inizio:f.p_inizio.value||null, p_fine:f.p_fine.value||null,
-      fotografi:base.fotografi, stampatori:base.stampatori, note:base.note };
-    const ev=await sb.from('tp_eventi').insert(evRec).select().single();
+      ...recFasce(f.modo.value, nf), fotografi:base.fotografi, stampatori:base.stampatori, note:base.note };
+    const ev=await salvaEventoDb(evRec);
     if(errore(ev.error)) return false;
     const ins=await sb.from('tp_turni').insert(nuovi.map(r=>({...r, evento_id:ev.data.id})));
     if(ins.error){ await sb.from('tp_eventi').delete().eq('id',ev.data.id); errore(ins.error); return false; }
@@ -565,7 +656,7 @@ function formModificaBlocco(){
       <label class="campo"><span>Al</span><input type="date" name="a" value="${a}" required></label>
     </div>
     <div class="due">
-      <label class="campo"><span>Quali turni</span><select name="fascia"><option value="MP">Mattina e pomeriggio</option><option value="M">Solo mattina</option><option value="P">Solo pomeriggio</option></select></label>
+      <label class="campo"><span>Quali turni</span><select name="fascia"><option value="MPG">Tutti i turni</option><option value="M">Solo mattina</option><option value="P">Solo pomeriggio</option><option value="G">Solo “tutto il giorno”</option></select></label>
       <label class="campo"><span>Quali giorni</span><select name="giorni"><option value="tutti">Tutti</option><option value="we">Sabati e domeniche</option><option value="fer">Dal lunedì al venerdì</option></select></label>
     </div>
     <label class="campo"><span>Cosa vuoi fare</span><select name="azione" onchange="for(const x of this.form.querySelectorAll('[data-az]')) x.style.display = x.dataset.az===this.value?'':'none'">
@@ -576,8 +667,9 @@ function formModificaBlocco(){
     </div>
     <div class="due" data-az="posti" style="display:none">
       <label class="campo"><span>Fotografi richiesti</span><input type="number" min="0" max="9" name="fot" value="1"></label>
-      <label class="campo"><span>Stampatori richiesti</span><input type="number" min="0" max="9" name="sta" value="1"></label>
+      <label class="campo"><span>Stampatori richiesti</span><input type="number" min="1" max="9" name="sta" value="1"></label>
     </div>
+    <p class="note" data-az="posti" style="display:none">Per chiudere posti su giorni sparsi è più comodo il “Calendario posti” dell'evento.</p>
     <p class="note" data-az="elimina" style="display:none">Si cancellano anche candidature, assegnazioni, incassi e spese di quei turni. Per una giornata di pioggia usa invece “Annulla turno”.</p>`,
   async f=>{
     if(f.a.value<f.da.value){ toast('Controlla le date.',true); return false; }
@@ -586,7 +678,7 @@ function formModificaBlocco(){
     const scelti=r.data.filter(t=>{
       const [y,m,g]=t.data.split('-').map(Number); const wd=new Date(y,m-1,g).getDay(); const we=wd===0||wd===6;
       if(f.giorni.value==='we'&&!we) return false; if(f.giorni.value==='fer'&&we) return false;
-      return f.fascia.value.includes(hm(t.ora_inizio)<'13:00'?'M':'P');
+      return f.fascia.value.includes(fasciaDi(t));
     });
     if(!scelti.length){ toast('Nessun turno corrisponde a queste scelte.',true); return false; }
     const ids=scelti.map(t=>t.id), pubb=scelti.filter(t=>t.pubblicato).length;
@@ -595,7 +687,7 @@ function formModificaBlocco(){
     let rec=null;
     if(f.azione.value==='orari'){
       if(!f.ini.value||!f.fin.value||f.fin.value<=f.ini.value){ toast('Inserisci un orario di inizio e una fine successiva.',true); return false; }
-      if(new Set(scelti.map(t=>t.data)).size<scelti.length){ toast('Per cambiare gli orari scegli “Solo mattina” o “Solo pomeriggio”: altrimenti i due turni dello stesso giorno avrebbero lo stesso orario.',true); return false; }
+      if(new Set(scelti.map(t=>t.data)).size<scelti.length){ toast('Per cambiare gli orari scegli “Solo mattina”, “Solo pomeriggio” o “Solo tutto il giorno”: altrimenti due turni dello stesso giorno avrebbero lo stesso orario.',true); return false; }
       if(!confirm('Imposto l\'orario '+f.ini.value+'–'+f.fin.value+' su '+quali+'. Procedo?')) return false;
       rec={ora_inizio:f.ini.value, ora_fine:f.fin.value};
     } else if(f.azione.value==='posti'){
@@ -614,7 +706,7 @@ function formModificaBlocco(){
 }
 
 // ---------- EVENTI: modifica ed eliminazione ----------
-const fasciaT = t => hm(t.ora_inizio)<'13:00'?'M':'P';
+const fasciaT = fasciaDi;
 function dateTra(d1,d2){ const out=[]; const d=new Date(d1+'T12:00:00Z'); while(d.toISOString().slice(0,10)<=d2){ out.push(d.toISOString().slice(0,10)); d.setUTCDate(d.getUTCDate()+1); } return out; }
 async function contaLegati(ids){
   let cand=0, ass=0;
@@ -635,53 +727,56 @@ function formEvento(id){
     <div class="due">
       <label class="campo"><span>Primo giorno</span><input type="date" name="d1" value="${e.data_inizio}" required></label>
       <label class="campo"><span>Ultimo giorno</span><input type="date" name="d2" value="${e.data_fine}" required></label></div>
-    <p class="note" style="margin:0 0 6px"><b>Mattina</b> (lascia vuoto se non c'è)</p>
-    <div class="due">
-      <label class="campo"><span>Inizio</span>${selOra('m_inizio',e.m_inizio,{vuoto:true})}</label>
-      <label class="campo"><span>Fine</span>${selOra('m_fine',e.m_fine,{vuoto:true})}</label></div>
-    <p class="note" style="margin:0 0 6px"><b>Pomeriggio</b> (lascia vuoto se non c'è)</p>
-    <div class="due">
-      <label class="campo"><span>Inizio</span>${selOra('p_inizio',e.p_inizio,{vuoto:true})}</label>
-      <label class="campo"><span>Fine</span>${selOra('p_fine',e.p_fine,{vuoto:true})}</label></div>
+    ${campiModalita(modoEvento(e), fasceEvento(e))}
     <div class="due">
       <label class="campo"><span>Fotografi richiesti</span><input type="number" min="0" max="9" name="fotografi" value="${e.fotografi}"></label>
-      <label class="campo"><span>Stampatori richiesti</span><input type="number" min="0" max="9" name="stampatori" value="${e.stampatori}"></label></div>
+      <label class="campo"><span>Stampatori richiesti</span><input type="number" min="1" max="9" name="stampatori" value="${e.stampatori}"></label></div>
     <label class="campo"><span>Note</span><textarea name="note" rows="2">${esc(e.note||'')}</textarea></label>
-    <p class="note">Le modifiche valgono per tutti i giorni dell'evento. I giorni che avete cambiato a mano (orari o posti diversi) restano come sono. Allungando il periodo si aggiungono i giorni nuovi; accorciandolo si eliminano quelli fuori, con candidature e squadre.</p>`,
+    <p class="note">Le modifiche valgono per tutti i giorni dell'evento. I giorni che avete cambiato a mano (orari, posti chiusi, mezza giornata o tutto il giorno) restano come sono. Allungando il periodo si aggiungono i giorni nuovi; accorciandolo si eliminano quelli fuori, con candidature e squadre.</p>`,
   async f=>{
     const d1=f.d1.value, d2=f.d2.value;
     if(!d1||!d2||d2<d1){ toast('Controlla le date.',true); return false; }
-    const nf={};
-    for(const [k,i,fi,nome] of [['M',f.m_inizio.value,f.m_fine.value,'mattina'],['P',f.p_inizio.value,f.p_fine.value,'pomeriggio']]){
-      if(!i&&!fi) continue;
-      if(!i||!fi||fi<=i){ toast('Controlla gli orari del '+nome+'.',true); return false; }
-      nf[k]=[i,fi];
-    }
-    if(!nf.M && !nf.P){ toast('Serve almeno la mattina o il pomeriggio.',true); return false; }
-    if(nf.M && nf.P && nf.P[0]<nf.M[1]){ toast('Il pomeriggio deve iniziare dopo la fine della mattina.',true); return false; }
-    if(nf.M && nf.M[0]>='13:00'){ toast('La mattina deve iniziare prima delle 13.',true); return false; }
-    if(nf.P && nf.P[0]<'13:00'){ toast('Il pomeriggio deve iniziare dalle 13 in poi.',true); return false; }
+    const nuovoModo=f.modo.value, vecchioModo=modoEvento(e), cambioModo=nuovoModo!==vecchioModo;
+    const nf=fasceDalForm(f);
+    if(typeof nf==='string'){ toast(nf,true); return false; }
+    if(+f.stampatori.value<1){ toast('Ogni turno deve avere almeno uno stampatore.',true); return false; }
     if(dateTra(d1,d2).length>120){ toast('Massimo 120 giorni per evento.',true); return false; }
     const r=await sb.from('tp_turni').select('*').eq('evento_id',id); if(errore(r.error)) return false;
     const turni=r.data;
-    const vecchie={M:e.m_inizio?[hm(e.m_inizio),hm(e.m_fine)]:null, P:e.p_inizio?[hm(e.p_inizio),hm(e.p_fine)]:null};
-    // 1. turni da eliminare: fuori dal nuovo periodo o di una fascia tolta
-    const via=turni.filter(t=>t.data<d1||t.data>d2||!nf[fasciaT(t)]);
+    const vecchie=fasceEvento(e);   // {M,P} oppure {G}
+    // un turno è "come l'evento" se ha ancora orari e posti dell'evento; un giorno è "come l'evento" se tutti i suoi turni lo sono
+    const comeEvento=t=>{ const k=fasciaT(t); return !!vecchie[k] && hm(t.ora_inizio)===vecchie[k][0] && hm(t.ora_fine)===vecchie[k][1] && t.fotografi===e.fotografi && t.stampatori===e.stampatori && !t.annullato; };
+    const giorniStd=new Set();
+    if(cambioModo){
+      const perGiorno={}; turni.forEach(t=>(perGiorno[t.data]=perGiorno[t.data]||[]).push(t));
+      const chiavi=Object.keys(vecchie).sort().join('');
+      for(const [d,tg] of Object.entries(perGiorno))
+        if(tg.every(comeEvento) && tg.map(fasciaT).sort().join('')===chiavi) giorniStd.add(d);
+    }
+    // 1. turni da eliminare: fuori dal nuovo periodo; di una fascia tolta (stessa modalità); dei giorni standard se cambia la modalità
+    const via=turni.filter(t=>t.data<d1||t.data>d2
+      || (!cambioModo && vecchie[fasciaT(t)] && !nf[fasciaT(t)])
+      || (cambioModo && giorniStd.has(t.data)));
     const restano=turni.filter(t=>!via.includes(t));
     // 2. orari: solo i turni che avevano ancora l'orario dell'evento
-    const aggOrari={M:[],P:[]};
-    for(const k of ['M','P']) if(nf[k] && vecchie[k] && (nf[k][0]!==vecchie[k][0]||nf[k][1]!==vecchie[k][1]))
+    const aggOrari={M:[],P:[],G:[]};
+    if(!cambioModo) for(const k of ['M','P','G']) if(nf[k] && vecchie[k] && (nf[k][0]!==vecchie[k][0]||nf[k][1]!==vecchie[k][1]))
       aggOrari[k]=restano.filter(t=>fasciaT(t)===k && hm(t.ora_inizio)===vecchie[k][0] && hm(t.ora_fine)===vecchie[k][1]).map(t=>t.id);
     // 3. posti: solo i turni che avevano ancora i posti dell'evento
     const nfot=+f.fotografi.value, nsta=+f.stampatori.value;
     const aggF = nfot!==e.fotografi ? restano.filter(t=>t.fotografi===e.fotografi).map(t=>t.id) : [];
     const aggS = nsta!==e.stampatori ? restano.filter(t=>t.stampatori===e.stampatori).map(t=>t.id) : [];
-    // 4. turni nuovi: giorni aggiunti al periodo, e fasce aggiunte (su tutto il periodo)
+    // 4. turni nuovi: giorni aggiunti al periodo; fasce aggiunte (su tutto il periodo); giorni standard rifatti con la nuova modalità.
+    //    Non si crea mai un turno che si sovrappone a uno che resta (es. un giorno passato a mano a "tutto il giorno").
     const sede=f.piscina_id.value;
     const nuovi=[];
-    for(const k of ['M','P']){ if(!nf[k]) continue;
-      const giorni = vecchie[k] ? dateTra(d1,d2).filter(d=>d<e.data_inizio||d>e.data_fine) : dateTra(d1,d2);
-      giorni.forEach(d=>{ if(!restano.some(t=>t.data===d && fasciaT(t)===k)) nuovi.push({piscina_id:sede, evento_id:id, data:d, ora_inizio:nf[k][0], ora_fine:nf[k][1], fotografi:nfot, stampatori:nsta}); });
+    for(const d of dateTra(d1,d2)) for(const k of ['M','G','P']){ if(!nf[k]) continue;
+      const fuori = d<e.data_inizio || d>e.data_fine;
+      const serve = fuori || (cambioModo ? giorniStd.has(d) : !vecchie[k]);
+      if(!serve) continue;
+      const nt={piscina_id:sede, evento_id:id, data:d, ora_inizio:nf[k][0], ora_fine:nf[k][1], fotografi:nfot, stampatori:nsta};
+      if(restano.some(t=>t.data===d && siSovrappone(t,nt))) continue;
+      nuovi.push(nt);
     }
     // turni di altri eventi nella stessa sede, giorno e ora: si saltano
     let saltati=0;
@@ -696,23 +791,256 @@ function formEvento(id){
     if(via.length){ const c=await contaLegati(via.map(t=>t.id)); if(!c){ toast('Non riesco a controllare le candidature, riprova.',true); return false; }
       righe.push('elimino '+via.length+' turni'+(c.cand||c.ass?' (con '+c.cand+' candidature e '+c.ass+' persone in squadra)':'')); }
     if(nuovi.length) righe.push('aggiungo '+nuovi.length+' turni'+(saltati?' (ne salto '+saltati+' già occupati da un altro evento)':''));
-    const nOr=aggOrari.M.length+aggOrari.P.length; if(nOr) righe.push('cambio l\'orario di '+nOr+' turni');
+    const nOr=aggOrari.M.length+aggOrari.P.length+aggOrari.G.length; if(nOr) righe.push('cambio l\'orario di '+nOr+' turni');
     if(aggF.length||aggS.length) righe.push('cambio i posti di '+new Set([...aggF,...aggS]).size+' turni');
     if(sede!==e.piscina_id) righe.push('sposto tutti i turni nella sede '+(piscinaById(sede)||{nome:'?'}).nome);
+    if(cambioModo){ const aMano=new Set(restano.filter(t=>t.data>=d1&&t.data<=d2).map(t=>t.data)).size;
+      righe.push('passo da “'+(vecchioModo==='giorno'?'tutto il giorno':'mattina + pomeriggio')+'” a “'+(nuovoModo==='giorno'?'tutto il giorno':'mattina + pomeriggio')+'” sui '+giorniStd.size+' giorni come l\'evento'+(aMano?' (i '+aMano+' giorni modificati a mano restano com\'erano)':'')); }
     if(righe.length && !confirm('Modifica evento: '+righe.join(', ')+'. Procedo?')) return false;
     // esecuzione
     if(via.length && !await aBlocchi(via.map(t=>t.id), p=>sb.from('tp_turni').delete().in('id',p))) return false;
-    for(const k of ['M','P']) if(aggOrari[k].length && !await aBlocchi(aggOrari[k], p=>sb.from('tp_turni').update({ora_inizio:nf[k][0],ora_fine:nf[k][1]}).in('id',p))) return false;
+    for(const k of ['M','P','G']) if(aggOrari[k].length && !await aBlocchi(aggOrari[k], p=>sb.from('tp_turni').update({ora_inizio:nf[k][0],ora_fine:nf[k][1]}).in('id',p))) return false;
     if(aggF.length && !await aBlocchi(aggF, p=>sb.from('tp_turni').update({fotografi:nfot}).in('id',p))) return false;
     if(aggS.length && !await aBlocchi(aggS, p=>sb.from('tp_turni').update({stampatori:nsta}).in('id',p))) return false;
     if(sede!==e.piscina_id && !await aBlocchi(restano.map(t=>t.id), p=>sb.from('tp_turni').update({piscina_id:sede}).in('id',p))) return false;
     if(nuovi.length && errore((await sb.from('tp_turni').insert(nuovi)).error)) return false;
     const rec={ nome:f.nome.value.trim()||null, piscina_id:sede, data_inizio:d1, data_fine:d2,
-      m_inizio:nf.M?nf.M[0]:null, m_fine:nf.M?nf.M[1]:null, p_inizio:nf.P?nf.P[0]:null, p_fine:nf.P?nf.P[1]:null,
-      fotografi:nfot, stampatori:nsta, note:f.note.value.trim()||null };
-    if(errore((await sb.from('tp_eventi').update(rec).eq('id',id)).error)) return false;
+      ...recFasce(nuovoModo, nf), fotografi:nfot, stampatori:nsta, note:f.note.value.trim()||null };
+    if(errore((await salvaEventoDb(rec, id)).error)) return false;
     toast('Evento aggiornato.'); await ricarica();
   }, 'Salva evento');
+}
+
+// ---------- CALENDARIO POSTI DELL'EVENTO ----------
+// Tutti i giorni dell'evento, anche su più mesi. Tocco su un giorno = dettaglio con le posizioni (si chiudono/riaprono con un tocco),
+// orari, mezza giornata / tutto il giorno, annullo. "Seleziona più giorni" = chiudere posti su giorni sparsi tutti insieme.
+// Chiudere un posto = abbassare fotografi/stampatori di quel turno: nessuno viene tolto dalla squadra (overbooking ammesso).
+const ecVal = n => (document.querySelector('#df [name="'+n+'"]')||{}).value || '';
+function turnoComeEvento(t,e){ const fe=fasceEvento(e), k=fasciaDi(t);
+  return !!fe[k] && hm(t.ora_inizio)===fe[k][0] && hm(t.ora_fine)===fe[k][1] && t.fotografi===e.fotografi && t.stampatori===e.stampatori && !t.annullato; }
+function turniGiornoEC(d){ return S.ec.turni.filter(t=>t.data===d).sort((a,b)=>ORDINE_FASCIA[fasciaDi(a)]-ORDINE_FASCIA[fasciaDi(b)] || hm(a.ora_inizio).localeCompare(hm(b.ora_inizio))); }
+function giornoModificato(d){ const e=S.ec.e, tg=turniGiornoEC(d), fe=fasceEvento(e);
+  return !tg.length || tg.some(t=>!turnoComeEvento(t,e)) || tg.map(fasciaDi).sort().join('')!==Object.keys(fe).sort().join(''); }
+async function caricaEC(){
+  const E=S.ec;
+  const r=await sb.from('tp_turni').select('*').eq('evento_id',E.id).order('data').order('ora_inizio'); if(errore(r.error)) return false;
+  const ids=r.data.map(x=>x.id), ass=[], cand=[];
+  for(let i=0;i<ids.length;i+=100){ const p=ids.slice(i,i+100);
+    const [a,k]=await Promise.all([sb.from('tp_assegnazioni').select('*').in('turno_id',p), sb.from('tp_candidature').select('*').in('turno_id',p)]);
+    if(errore(a.error)||errore(k.error)) return false; ass.push(...a.data); cand.push(...k.data); }
+  E.turni=r.data; E.ass=ass; E.cand=cand; return true;
+}
+async function apriCalEvento(id){
+  const e=(S.eventi||[]).find(x=>x.id===id); if(!e) return;
+  S.ec={ id, e, turni:[], ass:[], cand:[], multi:false, sel:new Set(), giorno:null };
+  if(!await caricaEC()) return;
+  apriDialog('Calendario posti · '+(e.nome||''), '<div id="ec"></div>', null, null, 'Chiudi');
+  document.getElementById('dlg').classList.add('largo');
+  renderEC();
+}
+// dopo ogni modifica: rilegge i turni dell'evento e aggiorna anche la pagina sotto
+async function dopoEC(msg){ if(msg) toast(msg); await caricaEC(); renderEC(); await caricaMese(); if(S.tab==='turni') vistaTurni(); }
+function puntiniPosti(t,e){
+  const p=(r,campo)=>{ const max=Math.max(e[campo]||0,t[campo]||0); let s=''; for(let i=0;i<max;i++) s+=`<i class="po ${r==='S'?'S':''} ${i<t[campo]?'':'x'}"></i>`; return s; };
+  return p('F','fotografi')+'<span style="width:3px"></span>'+p('S','stampatori');
+}
+function renderEC(){
+  const box=document.getElementById('ec'); if(!box||!S.ec) return; const E=S.ec, e=E.e;
+  if(E.giorno){ box.innerHTML=giornoEC(E.giorno); return; }
+  const d1=e.data_inizio, d2=e.data_fine, o=oggi();
+  let h=`<div class="ecb"><button type="button" class="btn pic ${E.multi?'pri':''}" onclick="ecMulti()">${E.multi?'Fine selezione':'Seleziona più giorni'}</button>
+    ${E.multi?['tutti:Tutti','fer:Lun–ven','we:Sab e dom','nessuno:Nessuno'].map(x=>{const [k,l]=x.split(':'); return `<button type="button" class="btn pic" onclick="ecSelTipo('${k}')">${l}</button>`;}).join(''):''}</div>
+    <p class="note" style="margin:0 0 6px">${E.multi?'Tocca i giorni da modificare insieme (anche sparsi), poi scegli in fondo quanti posti chiudere.':'Tocca un giorno per aprire o chiudere i posti, cambiare gli orari, passare da mezza giornata a tutto il giorno o annullare il turno.'}
+      <br><i class="po"></i> foto · <i class="po S"></i> stampa · quadratino vuoto = posto chiuso · <span style="color:var(--warn)">●</span> = giorno diverso dall'evento</p>`;
+  for(let ym=d1.slice(0,7); ym<=d2.slice(0,7); ym=spostaMese(ym,1)){
+    // solo i giorni dell'evento di questo mese
+    const [y,m]=ym.split('-').map(Number), ult=new Date(y,m,0).getDate();
+    const gIni = ym===d1.slice(0,7) ? +d1.slice(8) : 1, gFin = ym===d2.slice(0,7) ? +d2.slice(8) : ult;
+    const vuoti=(new Date(y,m-1,gIni).getDay()+6)%7;
+    h+=`<div class="ecm">${nomeMese(ym)}</div><div class="ecal">`+['Lun','Mar','Mer','Gio','Ven','Sab','Dom'].map(x=>`<div class="wd">${x}</div>`).join('');
+    for(let i=0;i<vuoti;i++) h+='<div class="eg nul"></div>';
+    for(let g=gIni; g<=gFin; g++){
+      const d=ym+'-'+pad(g);
+      const tg=turniGiornoEC(d);
+      h+=`<button type="button" class="eg ${E.sel.has(d)?'sel':''} ${giornoModificato(d)?'mod':''}" ${d===o?'style="border-color:var(--ink)"':''} onclick="ecTocco('${d}')" aria-label="${nomeGiorno(d)}"><span class="n">${g}</span>`
+        + (tg.length ? tg.map(t=>`<span class="tr ${t.annullato?'ann':''}" title="${NOMI_FASCIA[fasciaDi(t)]} ${hm(t.ora_inizio)}–${hm(t.ora_fine)}">${fasciaDi(t)} ${t.annullato?'annull.':puntiniPosti(t,e)}</span>`).join('') : '<span class="tr">nessun turno</span>')
+        + '</button>';
+    }
+    h+='</div>';
+  }
+  if(E.multi){
+    const n=E.sel.size, maxF=Math.max(e.fotografi, ...E.turni.map(t=>t.fotografi)), maxS=Math.max(e.stampatori, ...E.turni.map(t=>t.stampatori));
+    const fasce=new Set(E.turni.filter(t=>E.sel.has(t.data)).map(fasciaDi));
+    const opz=(max,def)=>{ let s=''; for(let i=0;i<=max;i++) s+=`<option ${i===def?'selected':''}>${i}</option>`; return s; };
+    if(E.nF==null){ E.nF=1; E.nS=0; E.fa='MPG'; }
+    if(E.fa!=='MPG' && !fasce.has(E.fa)) E.fa='MPG';
+    h+=`<div class="ecsel"><div class="ecr" style="margin:0"><b>${n} ${n===1?'giorno':'giorni'}</b><span class="note" style="margin:0">· chiudi per turno</span>
+        <label>Foto <select name="ecF" onchange="S.ec.nF=+this.value">${opz(maxF,E.nF)}</select></label>
+        <label>Stampa <select name="ecS" onchange="S.ec.nS=+this.value">${opz(Math.max(0,maxS-1),E.nS)}</select></label>
+        ${fasce.size>1?`<select name="ecFa" aria-label="Su quali turni" onchange="S.ec.fa=this.value"><option value="MPG">tutti i turni</option>${['M','P','G'].filter(k=>fasce.has(k)).map(k=>`<option value="${k}" ${E.fa===k?'selected':''}>solo ${NOMI_FASCIA[k].toLowerCase()}</option>`).join('')}</select>`:''}</div>
+      <div class="ecr"><button type="button" class="btn pic pri" ${n?'':'disabled'} onclick="ecChiudiSel()">Chiudi posti</button><button type="button" class="btn pic" ${n?'':'disabled'} onclick="ecRiapriSel()">Riapri i posti dell'evento</button>
+        <span class="note" style="margin:0">Resta sempre 1 stampatore; nessuno viene tolto dalla squadra.</span></div></div>`;
+  }
+  box.innerHTML=h;
+}
+function ecMulti(){ const E=S.ec; E.multi=!E.multi; if(!E.multi) E.sel.clear(); renderEC(); }
+function ecTocco(d){ const E=S.ec; if(E.multi){ E.sel.has(d)?E.sel.delete(d):E.sel.add(d); renderEC(); } else ecGiorno(d); }
+function ecGiorno(d){ S.ec.giorno=d; renderEC(); document.querySelector('#dlg .dlg-b').scrollTop=0; }
+function ecSelTipo(k){
+  const E=S.ec; E.sel.clear();
+  if(k!=='nessuno') dateTra(E.e.data_inizio,E.e.data_fine).forEach(d=>{ const [y,m,g]=d.split('-').map(Number), wd=new Date(y,m-1,g).getDay(), we=wd===0||wd===6;
+    if(k==='tutti' || (k==='we'&&we) || (k==='fer'&&!we)) E.sel.add(d); });
+  renderEC();
+}
+function descrT(t){ const [y,m,g]=t.data.split('-').map(Number); return g+'/'+m+' '+NOMI_FASCIA[fasciaDi(t)].toLowerCase(); }
+// applica i nuovi posti {id:{fotografi,stampatori}} raggruppando i turni con gli stessi valori
+async function salvaPosti(mappa){
+  const gruppi={}; for(const [id,v] of Object.entries(mappa)){ const k=v.fotografi+'|'+v.stampatori; (gruppi[k]=gruppi[k]||[]).push(id); }
+  for(const [k,ids] of Object.entries(gruppi)){ const [F,Sx]=k.split('|').map(Number);
+    if(!await aBlocchi(ids, p=>sb.from('tp_turni').update({fotografi:F, stampatori:Sx}).in('id',p))) return false; }
+  return true;
+}
+function ecTurniSel(){ const E=S.ec, fa=ecVal('ecFa')||'MPG'; return E.turni.filter(t=>E.sel.has(t.data) && !t.annullato && fa.includes(fasciaDi(t))); }
+async function ecChiudiSel(){
+  const E=S.ec, nF=+ecVal('ecF'), nS=+ecVal('ecS');
+  if(!nF && !nS){ toast('Scegli quanti posti chiudere.',true); return; }
+  const tt=ecTurniSel(); if(!tt.length){ toast('Nei giorni scelti non ci sono turni attivi.',true); return; }
+  const mappa={}, coperti=[]; let ultimo=0;
+  for(const t of tt){
+    const F=Math.max(0,t.fotografi-nF), Sx=Math.max(Math.min(1,t.stampatori), t.stampatori-nS);
+    if(nS && t.stampatori-nS<1) ultimo++;
+    if(F===t.fotografi && Sx===t.stampatori) continue;
+    mappa[t.id]={fotografi:F, stampatori:Sx};
+    const a=E.ass.filter(x=>x.turno_id===t.id);
+    if(a.filter(x=>x.ruolo==='F').length>F || a.filter(x=>x.ruolo==='S').length>Sx) coperti.push(descrT(t));
+  }
+  const n=Object.keys(mappa).length;
+  if(!n){ toast(ultimo?'Non si può chiudere l\'ultimo stampatore: in questi turni non c\'è altro da chiudere.':'In questi turni quei posti sono già chiusi.',true); return; }
+  const cosa=[nF?nF+' '+(nF===1?'fotografo':'fotografi'):'', nS?nS+' '+(nS===1?'stampatore':'stampatori'):''].filter(Boolean).join(' e ');
+  let msg='Chiudo '+cosa+' su '+n+' turni ('+new Set(Object.keys(mappa).map(id=>E.turni.find(t=>t.id===id).data)).size+' giorni).';
+  const nT=x=>x===1?'1 turno':x+' turni';
+  if(ultimo) msg+='\n\nIn '+nT(ultimo)+' resta comunque 1 stampatore: l\'ultimo non si può chiudere.';
+  if(coperti.length) msg+='\n\nATTENZIONE: in '+nT(coperti.length)+' il posto chiuso è già coperto in squadra ('+coperti.slice(0,6).join(', ')+(coperti.length>6?'…':'')+'). Nessuno viene tolto: la squadra resterà con persone in più del previsto.';
+  if(!confirm(msg+'\n\nProcedo?')) return;
+  if(!await salvaPosti(mappa)) return;
+  E.sel.clear(); await dopoEC('Posti chiusi su '+n+' turni.');
+}
+async function ecRiapriSel(){
+  const E=S.ec, e=E.e, tt=ecTurniSel(); const mappa={};
+  tt.forEach(t=>{ const F=Math.max(t.fotografi,e.fotografi), Sx=Math.max(t.stampatori,e.stampatori); if(F!==t.fotografi||Sx!==t.stampatori) mappa[t.id]={fotografi:F,stampatori:Sx}; });
+  const n=Object.keys(mappa).length;
+  if(!n){ toast('Nei giorni scelti i posti sono già tutti aperti.',true); return; }
+  if(!confirm('Riapro i posti dell\'evento ('+e.fotografi+' foto + '+e.stampatori+' stampa) su '+n+' turni. Procedo?')) return;
+  if(!await salvaPosti(mappa)) return;
+  E.sel.clear(); await dopoEC('Posti riaperti su '+n+' turni.');
+}
+
+// dettaglio di un giorno
+function giornoEC(d){
+  const E=S.ec, e=E.e, tg=turniGiornoEC(d), fe=fasceEvento(e), giorni=dateTra(e.data_inizio,e.data_fine), i=giorni.indexOf(d);
+  const nomi=arr=>arr.map(x=>esc((collabById(x.collaboratore_id)||{nome:'?'}).nome)).join(', ');
+  let h=`<div class="ecb"><button type="button" class="btn pic" onclick="ecGiorno(null)">‹ Calendario</button><span class="spazio"></span>
+    <span style="display:inline-flex;align-items:center;gap:6px"><button type="button" class="btn pic" ${i>0?'':'disabled'} onclick="ecGiorno('${giorni[i-1]}')" aria-label="Giorno prima">‹</button>
+    <b style="text-transform:capitalize;text-align:center;min-width:10em">${nomeGiorno(d)}</b>
+    <button type="button" class="btn pic" ${i<giorni.length-1?'':'disabled'} onclick="ecGiorno('${giorni[i+1]}')" aria-label="Giorno dopo">›</button></span></div>`;
+  if(!tg.length) h+=`<div class="vuoto" style="padding:16px">Nessun turno in questo giorno.<div class="azioni" style="justify-content:center"><button type="button" class="btn pic pri" onclick="ecCreaGiorno('${d}')">Crea i turni dell'evento (${esc(testoFasce(e))})</button></div></div>`;
+  tg.forEach(t=>{
+    const k=fasciaDi(t), a=E.ass.filter(x=>x.turno_id===t.id), nc=E.cand.filter(x=>x.turno_id===t.id).length;
+    const aF=a.filter(x=>x.ruolo==='F'), aS=a.filter(x=>x.ruolo==='S');
+    h+=`<div class="ecgt ${t.annullato?'ann':''}"><div class="t-head"><b>${NOMI_FASCIA[k]}</b><span class="t-ora">${hm(t.ora_inizio)}–${hm(t.ora_fine)}</span>
+      <span class="stato ${t.annullato?'ann':t.pubblicato?'':'bozza'}">${t.annullato?'Annullato'+(t.motivo_annullo?' · '+esc(t.motivo_annullo):''):t.pubblicato?'Squadra pubblicata':'Squadra da pubblicare'}</span></div>`;
+    if(t.annullato){ h+=`<div class="azioni"><button type="button" class="btn pic pri" onclick="ecRipristina('${t.id}')">Ripristina turno</button></div></div>`; return; }
+    const posti=(r,campo,nome,sq)=>{ const max=Math.max(e[campo]||0,t[campo]||0); let s='';
+      for(let j=0;j<max;j++){ const aperto=j<t[campo];
+        s+=`<button type="button" class="${r==='S'?'S':''} ${aperto?'':'x'}" onclick="ecPosto('${t.id}','${r}',${aperto?-1:1})" title="${aperto?'Tocca per chiudere':'Tocca per riaprire'}">${nome} ${j+1}<small>${aperto?(j<sq.length?'aperto · coperto':'aperto'):'chiuso'}</small></button>`; }
+      return s; };
+    h+=`<div class="pos">${posti('F','fotografi','Foto',aF)}${posti('S','stampatori','Stampa',aS)}</div>
+      <div class="note">Aperti: ${t.fotografi} foto + ${t.stampatori} stampa · ${nc} ${nc===1?'candidato':'candidati'}${a.length?' · in squadra: '+nomi(a):''}</div>
+      <div class="ecr"><span class="note" style="margin:0">Orario</span>${selOra('ei_'+t.id,t.ora_inizio,{label:'Inizio'})}–${selOra('ef_'+t.id,t.ora_fine,{label:'Fine'})}<button type="button" class="btn pic" onclick="ecOrari('${t.id}')">Salva orario</button></div>
+      <div class="ecr"><select name="em_${t.id}" aria-label="Motivo annullo"><option>Chiusura</option><option>Pioggia</option><option>Altro</option></select><button type="button" class="btn pic del" onclick="ecAnnulla('${t.id}')">Annulla turno</button></div></div>`;
+  });
+  // mezza giornata <-> tutto il giorno
+  const attivi=tg.filter(t=>!t.annullato), G=attivi.find(t=>fasciaDi(t)==='G'), MP=attivi.filter(t=>fasciaDi(t)!=='G');
+  if(G && !MP.length){
+    const m=fe.M||[hm(G.ora_inizio),'14:00'], p=fe.P||['14:00',hm(G.ora_fine)];
+    h+=`<div class="gct"><b>Dividi in mattina + pomeriggio</b>
+      <div class="ecr"><span class="note" style="margin:0">Mattina</span>${selOra('dmi',m[0])}–${selOra('dmf',m[1])}</div>
+      <div class="ecr"><span class="note" style="margin:0">Pomeriggio</span>${selOra('dpi',p[0])}–${selOra('dpf',p[1])}</div>
+      <div class="azioni"><button type="button" class="btn pic" onclick="ecDividi('${G.id}')">Dividi il giorno</button></div></div>`;
+  } else if(MP.length && !G){
+    const g=fe.G||[hm(MP[0].ora_inizio), hm(MP[MP.length-1].ora_fine)];
+    h+=`<div class="gct"><b>Passa a tutto il giorno</b> <span class="note">(un turno unico)</span>
+      <div class="ecr"><span class="note" style="margin:0">Dalle</span>${selOra('dgi',g[0])}<span class="note" style="margin:0">alle</span>${selOra('dgf',g[1])}</div>
+      <div class="azioni"><button type="button" class="btn pic" onclick="ecUnisci('${d}')">Passa a tutto il giorno</button></div></div>`;
+  }
+  return h;
+}
+async function ecPosto(tid,r,delta){
+  const E=S.ec, t=E.turni.find(x=>x.id===tid); if(!t) return;
+  const campo=r==='F'?'fotografi':'stampatori', nuovo=t[campo]+delta;
+  if(delta<0 && r==='S' && nuovo<1){ toast('Non si può chiudere l\'ultimo stampatore: ogni turno ne ha bisogno di almeno uno.',true); return; }
+  if(nuovo<0) return;
+  const sq=E.ass.filter(a=>a.turno_id===tid && a.ruolo===r);
+  if(delta<0 && sq.length>nuovo){
+    const nomi=sq.map(x=>(collabById(x.collaboratore_id)||{nome:'?'}).nome).join(', ');
+    if(!confirm('Questo posto è già coperto in squadra ('+nomi+').\n\nSe lo chiudi nessuno viene tolto: la squadra resta con '+(sq.length-nuovo)+' '+(r==='F'?'fotografo':'stampatore')+' in più del previsto. Chiudo il posto?')) return;
+  }
+  const prima=t[campo]; t[campo]=nuovo; renderEC();   // si vede subito
+  if(errore((await sb.from('tp_turni').update({[campo]:nuovo}).eq('id',tid)).error)){ t[campo]=prima; renderEC(); return; }
+  await dopoEC(delta<0?'Posto chiuso.':'Posto riaperto.');
+}
+function altriDelGiorno(t, ini, fin){ return S.ec.turni.filter(x=>x.id!==t.id && x.data===t.data && siSovrappone(x,{ora_inizio:ini,ora_fine:fin})); }
+async function ecOrari(tid){
+  const t=S.ec.turni.find(x=>x.id===tid), i=ecVal('ei_'+tid), f=ecVal('ef_'+tid);
+  if(!i||!f||f<=i){ toast('L\'ora di fine deve essere dopo l\'inizio.',true); return; }
+  if(altriDelGiorno(t,i,f).length){ toast('Questo orario si sovrappone all\'altro turno dello stesso giorno.',true); return; }
+  if(i===hm(t.ora_inizio) && f===hm(t.ora_fine)) return;
+  if(t.pubblicato && !confirm('La squadra di questo turno è già pubblicata: avvisate i ragazzi del nuovo orario. Procedo?')) return;
+  if(errore((await sb.from('tp_turni').update({ora_inizio:i, ora_fine:f}).eq('id',tid)).error)) return;
+  await dopoEC('Orario salvato: '+i+'–'+f+'.');
+}
+async function ecAnnulla(tid){
+  const t=S.ec.turni.find(x=>x.id===tid); let motivo=ecVal('em_'+tid);
+  if(motivo==='Altro'){ motivo=(prompt('Motivo dell\'annullo:')||'').trim()||'Altro'; }
+  if(!confirm('Annullo il turno '+descrT(t)+' ('+motivo+')? Resta in grigio, i ragazzi lo vedono come annullato e si può ripristinare.')) return;
+  if(errore((await sb.from('tp_turni').update({annullato:true, motivo_annullo:motivo}).eq('id',tid)).error)) return;
+  await dopoEC('Turno annullato.');
+}
+async function ecRipristina(tid){
+  if(errore((await sb.from('tp_turni').update({annullato:false, motivo_annullo:null}).eq('id',tid)).error)) return;
+  await dopoEC('Turno ripristinato.');
+}
+async function ecDividi(tid){
+  const E=S.ec, t=E.turni.find(x=>x.id===tid);
+  const nf=leggiFasce('mp',{M:[ecVal('dmi'),ecVal('dmf')], P:[ecVal('dpi'),ecVal('dpf')]});
+  if(typeof nf==='string'){ toast(nf,true); return; }
+  if(!nf.M||!nf.P){ toast('Servono sia la mattina sia il pomeriggio.',true); return; }
+  const nc=E.cand.filter(x=>x.turno_id===tid).length, na=E.ass.filter(x=>x.turno_id===tid).length;
+  if(!confirm('Divido il '+nomeGiorno(t.data)+' in mattina '+nf.M.join('–')+' e pomeriggio '+nf.P.join('–')+', con gli stessi posti.'+(nc||na?'\n\nCandidati ('+nc+') e squadra ('+na+') restano sulla mattina: per il pomeriggio dovranno candidarsi di nuovo.':'')+'\n\nProcedo?')) return;
+  if(errore((await sb.from('tp_turni').update({ora_inizio:nf.M[0], ora_fine:nf.M[1]}).eq('id',tid)).error)) return;
+  const ins=await sb.from('tp_turni').insert({piscina_id:t.piscina_id, evento_id:t.evento_id, data:t.data, ora_inizio:nf.P[0], ora_fine:nf.P[1], fotografi:t.fotografi, stampatori:t.stampatori, note:t.note||null});
+  if(ins.error){ await sb.from('tp_turni').update({ora_inizio:t.ora_inizio, ora_fine:t.ora_fine}).eq('id',tid); errore(ins.error); await dopoEC(); return; }
+  await dopoEC('Giorno diviso in mattina e pomeriggio.');
+}
+async function ecUnisci(d){
+  const E=S.ec, tg=turniGiornoEC(d), attivi=tg.filter(t=>!t.annullato&&fasciaDi(t)!=='G');
+  const nf=leggiFasce('giorno',{G:[ecVal('dgi'),ecVal('dgf')]});
+  if(typeof nf==='string'){ toast(nf,true); return; }
+  const tieni=attivi[0], via=tg.filter(t=>t!==tieni);
+  const legati=via.map(t=>({t, nc:E.cand.filter(x=>x.turno_id===t.id).length, na:E.ass.filter(x=>x.turno_id===t.id).length})).filter(x=>x.nc||x.na);
+  let msg='Passo il '+nomeGiorno(d)+' a tutto il giorno '+nf.G.join('–')+': resta un turno solo (quello della '+NOMI_FASCIA[fasciaDi(tieni)].toLowerCase()+', con i suoi candidati e la sua squadra).';
+  if(via.length) msg+='\n\nElimino '+via.map(t=>NOMI_FASCIA[fasciaDi(t)].toLowerCase()+' '+hm(t.ora_inizio)+'–'+hm(t.ora_fine)).join(', ')+(legati.length?', con '+legati.reduce((s,x)=>s+x.nc,0)+' candidature e '+legati.reduce((s,x)=>s+x.na,0)+' persone in squadra':'')+'.';
+  if(!confirm(msg+'\n\nProcedo?')) return;
+  if(via.length && !await aBlocchi(via.map(t=>t.id), p=>sb.from('tp_turni').delete().in('id',p))) { await dopoEC(); return; }
+  if(errore((await sb.from('tp_turni').update({ora_inizio:nf.G[0], ora_fine:nf.G[1]}).eq('id',tieni.id)).error)){ await dopoEC(); return; }
+  await dopoEC('Giorno passato a tutto il giorno.');
+}
+async function ecCreaGiorno(d){
+  const e=S.ec.e, fe=fasceEvento(e);
+  const righe=['M','G','P'].filter(k=>fe[k]).map(k=>({piscina_id:e.piscina_id, evento_id:e.id, data:d, ora_inizio:fe[k][0], ora_fine:fe[k][1], fotografi:e.fotografi, stampatori:e.stampatori}));
+  if(!righe.length) return;
+  if(errore((await sb.from('tp_turni').insert(righe)).error)) return;
+  await dopoEC('Turni creati.');
 }
 
 async function eliminaEvento(id){
@@ -1111,13 +1439,13 @@ function calendarioCand(turni){
       + tg.map(t=>{
           const p=piscinaById(t.piscina_id)||{nome:'?'}; const k=S.cand.filter(x=>x.turno_id===t.id); const posti=(t.fotografi||0)+(t.stampatori||0);
           const nomi=k.map(x=>{ const sq=S.ass.some(a=>a.turno_id===t.id&&a.collaboratore_id===x.collaboratore_id); return (sq?'★':'')+esc(nomeC(x.collaboratore_id).split(' ')[0]); });
-          const lett=hm(t.ora_inizio)<'13:00'?'M':'P';
+          const lett=fasciaDi(t);
           return `<div class="cr ${t.annullato?'ann':''}" style="--c:${coloreSede(p)}" title="${esc(p.nome)} ${hm(t.ora_inizio)}–${hm(t.ora_fine)}">
             <b>${lett}</b><span class="${t.annullato?'':k.length>=posti?'pieno':'manca'}">${t.annullato?'annull.':k.length+'/'+posti}</span>
             <span class="nm">${nomi.slice(0,3).join(', ')}${nomi.length>3?' +'+(nomi.length-3):''}</span></div>`;
         }).join('') + '</div>';
   }
-  return h+'</div><p class="note">Clic su un giorno per vedere e gestire i candidati. Conteggio verde = candidati sufficienti per i posti, arancione = ne mancano. ★ davanti a un nome = in squadra.</p>';
+  return h+'</div><p class="note">Clic su un giorno per vedere e gestire i candidati. M = mattina, P = pomeriggio, G = tutto il giorno. Conteggio verde = candidati sufficienti per i posti, arancione = ne mancano. ★ davanti a un nome = in squadra.</p>';
 }
 function giornoCand(d){
   apriDialog(nomeGiorno(d).replace(/^./,c=>c.toUpperCase()), `<div id="gc" data-d="${d}"></div>`);
@@ -1253,6 +1581,7 @@ function apriDialog(titolo, corpo, onSave, etichetta, chiudiTesto){
   // una finestra aperta sopra il dettaglio di un turno, alla chiusura riporta al dettaglio
   d.dataset.dopo = d.open && (d.dataset.tipo==='turno' || d.dataset.dopo==='turno') ? 'turno' : '';
   d.dataset.tipo = '';
+  d.classList.remove('largo');
   d.innerHTML = `<form method="dialog" id="df">
     <div class="dlg-h">${esc(titolo)}<button type="button" class="btn pic" onclick="chiudiDialog()" aria-label="Chiudi">×</button></div>
     <div class="dlg-b">${corpo}</div>

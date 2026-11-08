@@ -120,6 +120,8 @@ function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','
 function hm(t){ return (t||'').slice(0,5); }
 function nomeGiorno(d){ const [y,m,g]=d.split('-').map(Number); return new Date(y,m-1,g).toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long'}); }
 function minuti(s){ const [h,m]=hm(s).split(':').map(Number); return h*60+(m||0); }
+// M = mattina, P = pomeriggio, G = tutto il giorno (inizia prima delle 13 e finisce dalle 15 in poi): stessa regola di index.html
+function fasciaDi(t){ const i=hm(t.ora_inizio), f=hm(t.ora_fine); return i<'13:00' ? (f>='15:00'?'G':'M') : 'P'; }
 function toast(m,err){ const t=document.getElementById('toast'); t.textContent=m; t.className=err?'err':''; t.style.display='block'; clearTimeout(toast._t); toast._t=setTimeout(()=>t.style.display='none', err?5000:1800); }
 function leggiIo(){ try{ return localStorage.getItem(CHIAVE_NOME); }catch(e){ return null; } }
 function scriviIo(v){ try{ v ? localStorage.setItem(CHIAVE_NOME,v) : localStorage.removeItem(CHIAVE_NOME); }catch(e){} }
@@ -260,7 +262,7 @@ function vistaCal(){
   const nomeM=new Date(y,mm-1,1).toLocaleDateString('it-IT',{month:'long',year:'numeric'});
   const sedi=[]; S.turni.filter(t=>t.data.slice(0,7)===S.mese).forEach(t=>{ if(!sedi.some(x=>x.n===t.piscina)) sedi.push({n:t.piscina,c:coloreT(t)}); });
   let h=`<div class="mesebar"><button onclick="cambiaMeseCal(-1)" ${S.mese<=mesi[0]?'disabled':''} aria-label="Mese precedente">‹</button><h2>${nomeM}</h2><button onclick="cambiaMeseCal(1)" ${S.mese>=mesi[mesi.length-1]?'disabled':''} aria-label="Mese successivo">›</button></div>`;
-  h+='<div class="legenda">'+sedi.map(x=>`<span><i style="background:${x.c}"></i>${esc(x.n)}</span>`).join('')+'<span style="color:var(--muted)">M = mattina · P = pomeriggio</span></div>';
+  h+='<div class="legenda">'+sedi.map(x=>`<span><i style="background:${x.c}"></i>${esc(x.n)}</span>`).join('')+'<span style="color:var(--muted)">'+['M = mattina','P = pomeriggio','G = tutto il giorno'].filter(x=>S.turni.some(t=>t.data.slice(0,7)===S.mese && fasciaDi(t)===x[0])).join(' · ')+'</span></div>';
   h+='<div class="cal">'+['L','M','M','G','V','S','D'].map(x=>`<div class="wd">${x}</div>`).join('');
   const primo=new Date(y,mm-1,1), ult=new Date(y,mm,0).getDate(), vuoti=(primo.getDay()+6)%7, oggi=oggiStr();
   for(let i=0;i<vuoti;i++) h+='<div class="gg vuoto"></div>';
@@ -270,13 +272,13 @@ function vistaCal(){
     const mostra=tg.length>4?tg.slice(0,3):tg;
     h+=`<div class="gg ${tg.length?'':'off'} ${d===oggi?'oggi':''}"><button class="num" onclick="apriGiorno('${d}')" ${tg.length?'':'disabled'}>${g}</button><div class="pills">`
       + mostra.map(t=>{ const si=mio(t), sq=inSquadra(t);
-          const lett=hm(t.ora_inizio)<'13:00'?'M':'P';
+          const lett=fasciaDi(t);
           return `<button class="pill ${t.annullato?'ann':''} ${si?'si':''}" style="--c:${coloreT(t)}" title="${esc(t.piscina)} ${hm(t.ora_inizio)}–${hm(t.ora_fine)}" onclick="tocco('${t.id}')">${sq?'★':si?'✓':lett}</button>`; }).join('')
       + (tg.length>4?`<button class="pill piu" onclick="apriGiorno('${d}')">+${tg.length-3}</button>`:'')
       + '</div></div>';
   }
   h+='</div><button class="btnblocco" onclick="formBlocco()">Candidati a più giorni</button>'
-    +'<p class="intro" style="margin-top:8px;font-size:.88rem">Tocca M o P per candidarti (diventa pieno ✓), ritocca per toglierti. Tocca il numero del giorno per vedere orari, candidati e squadra. ★ = sei in squadra.</p>';
+    +'<p class="intro" style="margin-top:8px;font-size:.88rem">Tocca M, P o G per candidarti (diventa pieno ✓), ritocca per toglierti. Tocca il numero del giorno per vedere orari, candidati e squadra. ★ = sei in squadra.</p>';
   m.innerHTML=h;
 }
 
@@ -306,7 +308,7 @@ function formBlocco(){
   v.innerHTML=`<form class="box foglio blocco" onsubmit="inviaBlocco(event)"><h2>Candidati a più giorni</h2>
     <label>Sede<select name="sede">${sedi.map(n=>`<option>${esc(n)}</option>`).join('')}</select></label>
     <label>Giorni<select name="giorni"><option value="tutti">Tutti i giorni</option><option value="we">Sabati e domeniche</option><option value="fer">Dal lunedì al venerdì</option></select></label>
-    <label>Fasce<select name="fasce"><option value="MP">Mattina e pomeriggio</option><option value="M">Solo mattina</option><option value="P">Solo pomeriggio</option></select></label>
+    <label>Fasce<select name="fasce"><option value="MPG">Tutti i turni</option><option value="M">Solo mattina</option><option value="P">Solo pomeriggio</option><option value="G">Solo tutto il giorno</option></select></label>
     <div class="dueb"><label>Dal<input type="date" name="da" value="${da}"></label><label>Al<input type="date" name="a" value="${a}"></label></div>
     <button class="btnpri" type="submit">Continua</button>
     <button class="btnsec" type="button" onclick="this.closest('.velo').remove()">Annulla</button></form>`;
@@ -319,10 +321,10 @@ async function inviaBlocco(ev){
     if(t.piscina!==f.sede.value || t.annullato || t.data<oggi || t.data<f.da.value || t.data>f.a.value || mio(t)) return false;
     const [y,m,g]=t.data.split('-').map(Number); const wd=new Date(y,m-1,g).getDay(); const we=wd===0||wd===6;
     if(giorni==='we' && !we) return false; if(giorni==='fer' && we) return false;
-    return fasce.includes(hm(t.ora_inizio)<'13:00'?'M':'P');
+    return fasce.includes(fasciaDi(t));
   });
   if(!scelti.length){ toast('Nessun turno nuovo con queste scelte.',true); return; }
-  const descr={tutti:'tutti i giorni',we:'sabati e domeniche',fer:'dal lunedì al venerdì'}[giorni]+', '+{MP:'mattina e pomeriggio',M:'solo mattina',P:'solo pomeriggio'}[fasce];
+  const descr={tutti:'tutti i giorni',we:'sabati e domeniche',fer:'dal lunedì al venerdì'}[giorni]+', '+{MPG:'tutti i turni',M:'solo mattina',P:'solo pomeriggio',G:'solo tutto il giorno'}[fasce];
   if(!confirm('Ti candidi a '+scelti.length+' turni di '+f.sede.value+' ('+descr+'). Confermi?')) return;
   const { data, error } = await sb.rpc('tp_pub_candida_molti', { p_collab:S.io.id, p_turni:scelti.map(t=>t.id) });
   if(error){ toast(error.message||'Non salvato, riprova.',true); return; }
