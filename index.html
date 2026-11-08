@@ -191,6 +191,7 @@ dialog::backdrop{background:rgba(18,48,58,.45)}
 .login .corpo{padding:22px}
 .login h1{font:700 1.5rem var(--fc);margin:0 0 4px}
 .login p{color:var(--muted);margin:0 0 18px}
+.link-btn{background:none;border:0;padding:0;margin-top:14px;color:var(--water);font-weight:600;text-decoration:underline;text-underline-offset:3px}
 #toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:8px;font-size:.92rem;display:none;z-index:50;max-width:92vw}
 #toast.err{background:var(--red)}
 /* calendario posti dell'evento */
@@ -325,9 +326,70 @@ async function avvio(){
   const msg = t => document.getElementById('app').innerHTML='<div class="login"><div class="corsia"></div><div class="corpo"><h1>Configurazione mancante</h1><p>'+t+'</p></div></div>';
   if(!window.supabase) return msg('La libreria del database non si è caricata. Controlla la connessione e ricarica la pagina.');
   if(!/^https:\/\/.+\.supabase\.co/.test(SUPABASE_URL) || !SUPABASE_KEY || SUPABASE_KEY.startsWith('INCOLLA')) return msg('Manca il file config.js oppure URL e chiave non sono compilati.');
+  // arrivo dal link "recupera password" dell'email: l'indirizzo contiene #...type=recovery (o un errore se il link è scaduto)
+  const h = new URLSearchParams(location.hash.slice(1));
+  const recupero = h.get('type')==='recovery', erroreLink = h.get('error_description') || h.get('error');
   try{ sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY); }catch(e){ return msg('URL o chiave in config.js non validi: '+esc(e.message)); }
   const { data:{ session } } = await sb.auth.getSession();
+  if(recupero || erroreLink) history.replaceState(null, '', location.pathname + location.search);
+  if(erroreLink && !session) return schermataLogin('Il link per cambiare la password non è valido o è scaduto: richiedine uno nuovo con “Password dimenticata?”.');
+  if(recupero && session) return schermataNuovaPassword(session.user);
   if(session) dopoLogin(session.user); else schermataLogin();
+}
+
+// ---------- recupero password ----------
+function schermataRecupero(email){
+  document.getElementById('app').innerHTML = `
+  <div class="login"><div class="corsia"></div><div class="corpo">
+    <img class="logo-login" src="logo-nero.png" alt="Frame About You"><h1>Password dimenticata</h1>
+    <p>Scrivi l'email con cui accedi: ti mandiamo un link per scegliere una password nuova.</p>
+    <form id="fr">
+      <label class="campo"><span>Email</span><input name="email" type="email" autocomplete="username" required value="${esc(email||'')}"></label>
+      <button class="btn pri" style="width:100%">Mandami il link</button>
+    </form>
+    <p id="frMsg" style="margin-top:12px"></p>
+    <button type="button" class="link-btn" onclick="schermataLogin()">‹ Torna all'accesso</button>
+  </div></div>`;
+  document.getElementById('fr').onsubmit = async ev => {
+    ev.preventDefault(); const f=ev.target, b=f.querySelector('button'), out=document.getElementById('frMsg');
+    b.disabled=true; b.textContent='Invio…';
+    const { error } = await sb.auth.resetPasswordForEmail(f.email.value.trim(), { redirectTo: location.origin + location.pathname });
+    b.disabled=false; b.textContent='Mandami il link';
+    if(error && (error.status===429 || /rate limit|security purposes|seconds/i.test(error.message||''))){
+      out.style.color='var(--red)'; out.textContent='Troppe richieste in poco tempo: riprova tra qualche minuto.'; return; }
+    if(error){ out.style.color='var(--red)'; out.textContent='Non riesco a mandare l\'email, riprova più tardi.'; return; }
+    // stesso messaggio sia che l'email esista sia che no (non si rivela chi ha un account)
+    out.style.color='var(--ok)'; out.textContent='Fatto. Se l\'email è registrata, tra poco ti arriva un messaggio con il link (controlla anche lo spam). Il link vale per poco tempo e si usa una volta sola.';
+  };
+}
+function schermataNuovaPassword(user){
+  document.getElementById('app').innerHTML = `
+  <div class="login"><div class="corsia"></div><div class="corpo">
+    <img class="logo-login" src="logo-nero.png" alt="Frame About You"><h1>Nuova password</h1>
+    <p>Scegli la nuova password per ${esc(user.email||'il tuo account')}.</p>
+    <form id="fn">
+      <label class="campo"><span>Nuova password (almeno 8 caratteri)</span><input name="p1" type="password" autocomplete="new-password" minlength="8" required></label>
+      <label class="campo"><span>Ripeti la password</span><input name="p2" type="password" autocomplete="new-password" minlength="8" required></label>
+      <button class="btn pri" style="width:100%">Salva ed entra</button>
+    </form>
+  </div></div>`;
+  document.getElementById('fn').onsubmit = async ev => {
+    ev.preventDefault(); const f=ev.target;
+    if(f.p1.value.length<8){ toast('La password deve avere almeno 8 caratteri.',true); return; }
+    if(f.p1.value!==f.p2.value){ toast('Le due password non sono uguali.',true); return; }
+    const b=f.querySelector('button'); b.disabled=true;
+    const { data, error } = await sb.auth.updateUser({ password:f.p1.value });
+    b.disabled=false;
+    if(error){
+      const m=error.message||'';
+      toast(/different from the old/i.test(m)?'La nuova password deve essere diversa da quella vecchia.'
+        : /weak|least|characters/i.test(m)?'Password troppo semplice: usane una più lunga, con lettere e numeri.'
+        : /session|expired|jwt/i.test(m)?'Il link è scaduto: richiedine uno nuovo.' : 'Password non salvata: '+m, true);
+      return;
+    }
+    toast('Password cambiata.');
+    dopoLogin(data.user||user);
+  };
 }
 
 function schermataLogin(msg){
@@ -339,6 +401,7 @@ function schermataLogin(msg){
       <label class="campo"><span>Password</span><input name="pw" type="password" autocomplete="current-password" required></label>
       <button class="btn pri" style="width:100%">Entra</button>
     </form>
+    <button type="button" class="link-btn" onclick="schermataRecupero(document.querySelector('#fl [name=email]').value.trim())">Password dimenticata?</button>
     ${msg?'<p style="color:var(--red);margin-top:12px">'+esc(msg)+'</p>':''}
   </div></div>`;
   document.getElementById('fl').onsubmit = async ev => {
