@@ -191,6 +191,9 @@ dialog::backdrop{background:rgba(18,48,58,.45)}
 .login .corpo{padding:22px}
 .login h1{font:700 1.5rem var(--fc);margin:0 0 4px}
 .login p{color:var(--muted);margin:0 0 18px}
+.pwbox{position:relative;display:block}
+.pwbox input{padding-right:5.5em!important}
+.pwvedi{position:absolute;right:4px;top:50%;transform:translateY(-50%);background:none;border:0;border-radius:6px;padding:6px 8px;color:var(--water);font-weight:600;font-size:.88rem}
 .link-btn{background:none;border:0;padding:0;margin-top:14px;color:var(--water);font-weight:600;text-decoration:underline;text-underline-offset:3px}
 #toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:8px;font-size:.92rem;display:none;z-index:50;max-width:92vw}
 #toast.err{background:var(--red)}
@@ -337,6 +340,16 @@ async function avvio(){
   if(session) dopoLogin(session.user); else schermataLogin();
 }
 
+// campo password con il tasto "Mostra" / "Nascondi"
+function campoPw(name, auto, extra){
+  return `<span class="pwbox"><input name="${name}" type="password" autocomplete="${auto}" required${extra||''}><button type="button" class="pwvedi" aria-label="Mostra password" aria-pressed="false" onclick="vediPw(this)">Mostra</button></span>`;
+}
+function vediPw(b){
+  const i=b.previousElementSibling, vedi=i.type==='password';
+  i.type=vedi?'text':'password'; b.textContent=vedi?'Nascondi':'Mostra';
+  b.setAttribute('aria-pressed',vedi); b.setAttribute('aria-label',vedi?'Nascondi password':'Mostra password'); i.focus();
+}
+
 // ---------- recupero password ----------
 function schermataRecupero(email){
   document.getElementById('app').innerHTML = `
@@ -368,8 +381,8 @@ function schermataNuovaPassword(user){
     <img class="logo-login" src="logo-nero.png" alt="Frame About You"><h1>Nuova password</h1>
     <p>Scegli la nuova password per ${esc(user.email||'il tuo account')}.</p>
     <form id="fn">
-      <label class="campo"><span>Nuova password (almeno 8 caratteri)</span><input name="p1" type="password" autocomplete="new-password" minlength="8" required></label>
-      <label class="campo"><span>Ripeti la password</span><input name="p2" type="password" autocomplete="new-password" minlength="8" required></label>
+      <label class="campo"><span>Nuova password (almeno 8 caratteri)</span>${campoPw('p1','new-password',' minlength="8"')}</label>
+      <label class="campo"><span>Ripeti la password</span>${campoPw('p2','new-password',' minlength="8"')}</label>
       <button class="btn pri" style="width:100%">Salva ed entra</button>
     </form>
   </div></div>`;
@@ -398,7 +411,7 @@ function schermataLogin(msg){
     <img class="logo-login" src="logo-nero.png" alt="Frame About You"><h1>Turni</h1><p>Accesso organizzatori</p>
     <form id="fl">
       <label class="campo"><span>Email</span><input name="email" type="email" autocomplete="username" required></label>
-      <label class="campo"><span>Password</span><input name="pw" type="password" autocomplete="current-password" required></label>
+      <label class="campo"><span>Password</span>${campoPw('pw','current-password')}</label>
       <button class="btn pri" style="width:100%">Entra</button>
     </form>
     <button type="button" class="link-btn" onclick="schermataRecupero(document.querySelector('#fl [name=email]').value.trim())">Password dimenticata?</button>
