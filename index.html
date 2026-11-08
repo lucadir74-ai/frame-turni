@@ -960,7 +960,9 @@ async function apriCalEvento(id){
 // dopo ogni modifica: rilegge i turni dell'evento e aggiorna anche la pagina sotto
 async function dopoEC(msg){ if(msg) toast(msg); await caricaEC(); renderEC(); await caricaMese(); if(S.tab==='turni') vistaTurni(); }
 function puntiniPosti(t,e){
-  const p=(r,campo)=>{ const max=Math.max(e[campo]||0,t[campo]||0); let s=''; for(let i=0;i<max;i++) s+=`<i class="po ${r==='S'?'S':''} ${i<t[campo]?'':'x'}"></i>`; return s; };
+  const p=(r,campo)=>{ const max=Math.max(e[campo]||0,t[campo]||0); let s='';
+    if(max>3) return `${t[campo]}<i class="po ${r==='S'?'S':''}"></i>`;   // tanti posti: numero invece dei quadratini
+    for(let i=0;i<max;i++) s+=`<i class="po ${r==='S'?'S':''} ${i<t[campo]?'':'x'}"></i>`; return s; };
   return p('F','fotografi')+'<span style="width:3px"></span>'+p('S','stampatori');
 }
 function renderEC(){
@@ -991,13 +993,21 @@ function renderEC(){
     const n=E.sel.size, maxF=Math.max(e.fotografi, ...E.turni.map(t=>t.fotografi)), maxS=Math.max(e.stampatori, ...E.turni.map(t=>t.stampatori));
     const fasce=new Set(E.turni.filter(t=>E.sel.has(t.data)).map(fasciaDi));
     const opz=(max,def)=>{ let s=''; for(let i=0;i<=max;i++) s+=`<option ${i===def?'selected':''}>${i}</option>`; return s; };
-    if(E.nF==null){ E.nF=1; E.nS=0; E.fa='MPG'; }
+    if(E.nF==null){ E.nF=1; E.nS=0; E.fa='MPG'; E.az='chiudi'; E.pF=1; E.pS=1; }
     if(E.fa!=='MPG' && !fasce.has(E.fa)) E.fa='MPG';
-    h+=`<div class="ecsel"><div class="ecr" style="margin:0"><b>${n} ${n===1?'giorno':'giorni'}</b><span class="note" style="margin:0">· chiudi per turno</span>
-        <label>Foto <select name="ecF" onchange="S.ec.nF=+this.value">${opz(maxF,E.nF)}</select></label>
-        <label>Stampa <select name="ecS" onchange="S.ec.nS=+this.value">${opz(Math.max(0,maxS-1),E.nS)}</select></label>
+    const imposta=E.az==='imposta';
+    h+=`<div class="ecsel"><div class="ecr" style="margin:0"><b>${n} ${n===1?'giorno':'giorni'}</b>
+        <select name="ecAz" aria-label="Cosa fare" onchange="S.ec.az=this.value; renderEC()"><option value="chiudi" ${imposta?'':'selected'}>chiudi posti</option><option value="imposta" ${imposta?'selected':''}>imposta i posti esatti</option></select>
+        ${imposta
+          ? `<label>Foto ${selNum('ecPF',0,MAX_POSTI,E.pF).replace('<select','<select onchange="S.ec.pF=+this.value; renderEC()"')}</label>
+             <label>Stampa ${selNum('ecPS',1,MAX_POSTI,E.pS).replace('<select','<select onchange="S.ec.pS=+this.value; renderEC()"')}</label>`
+          : `<label>Foto <select name="ecF" onchange="S.ec.nF=+this.value">${opz(maxF,E.nF)}</select></label>
+             <label>Stampa <select name="ecS" onchange="S.ec.nS=+this.value">${opz(Math.max(0,maxS-1),E.nS)}</select></label>`}
         ${fasce.size>1?`<select name="ecFa" aria-label="Su quali turni" onchange="S.ec.fa=this.value"><option value="MPG">tutti i turni</option>${['M','P','G'].filter(k=>fasce.has(k)).map(k=>`<option value="${k}" ${E.fa===k?'selected':''}>solo ${NOMI_FASCIA[k].toLowerCase()}</option>`).join('')}</select>`:''}</div>
-      <div class="ecr"><button type="button" class="btn pic pri" ${n?'':'disabled'} onclick="ecChiudiSel()">Chiudi posti</button><button type="button" class="btn pic" ${n?'':'disabled'} onclick="ecRiapriSel()">Riapri i posti dell'evento</button>
+      <div class="ecr">${imposta
+          ? `<button type="button" class="btn pic pri" ${n?'':'disabled'} onclick="ecImpostaSel()">Imposta ${E.pF} foto + ${E.pS} stampa</button>`
+          : `<button type="button" class="btn pic pri" ${n?'':'disabled'} onclick="ecChiudiSel()">Chiudi posti</button>`}
+        <button type="button" class="btn pic" ${n?'':'disabled'} onclick="ecRiapriSel()">Riapri i posti dell'evento</button>
         <span class="note" style="margin:0">Resta sempre 1 stampatore; nessuno viene tolto dalla squadra.</span></div></div>`;
   }
   box.innerHTML=h;
@@ -1044,6 +1054,18 @@ async function ecChiudiSel(){
   if(!await salvaPosti(mappa)) return;
   E.sel.clear(); await dopoEC('Posti chiusi su '+n+' turni.');
 }
+async function ecImpostaSel(){
+  const E=S.ec, F=+ecVal('ecPF'), Sx=Math.max(1,+ecVal('ecPS'));
+  const tt=ecTurniSel(); if(!tt.length){ toast('Nei giorni scelti non ci sono turni attivi.',true); return; }
+  const mappa={}, coperti=[];
+  tt.forEach(t=>{ if(t.fotografi===F && t.stampatori===Sx) return; mappa[t.id]={fotografi:F, stampatori:Sx}; if(supera(t,F,Sx)) coperti.push(descrT(t)); });
+  const n=Object.keys(mappa).length;
+  if(!n){ toast('Nei giorni scelti i posti sono già '+F+' foto + '+Sx+' stampa.',true); return; }
+  const giorni=new Set(Object.keys(mappa).map(id=>E.turni.find(t=>t.id===id).data)).size;
+  if(!confirm('Imposto '+F+' foto + '+Sx+' stampa su '+(n===1?'1 turno':n+' turni')+' ('+(giorni===1?'1 giorno':giorni+' giorni')+').'+avvisoCoperti(coperti)+'\n\nProcedo?')) return;
+  if(!await salvaPosti(mappa)) return;
+  E.sel.clear(); await dopoEC('Posti impostati su '+n+' turni.');
+}
 async function ecRiapriSel(){
   const E=S.ec, e=E.e, tt=ecTurniSel(); const mappa={};
   tt.forEach(t=>{ const F=Math.max(t.fotografi,e.fotografi), Sx=Math.max(t.stampatori,e.stampatori); if(F!==t.fotografi||Sx!==t.stampatori) mappa[t.id]={fotografi:F,stampatori:Sx}; });
@@ -1075,6 +1097,10 @@ function giornoEC(d){
       return s; };
     h+=`<div class="pos">${posti('F','fotografi','Foto',aF)}${posti('S','stampatori','Stampa',aS)}</div>
       <div class="note">Aperti: ${t.fotografi} foto + ${t.stampatori} stampa · ${nc} ${nc===1?'candidato':'candidati'}${a.length?' · in squadra: '+nomi(a):''}</div>
+      <div class="ecr"><span class="note" style="margin:0">Posti di questo turno</span>
+        <label class="ecn">Foto ${selNum('pf_'+t.id,0,MAX_POSTI,t.fotografi)}</label>
+        <label class="ecn">Stampa ${selNum('ps_'+t.id,1,MAX_POSTI,Math.max(1,t.stampatori))}</label>
+        <button type="button" class="btn pic" onclick="ecSalvaPosti('${t.id}')">Salva posti</button></div>
       <div class="ecr"><span class="note" style="margin:0">Orario</span>${selOra('ei_'+t.id,t.ora_inizio,{label:'Inizio'})}–${selOra('ef_'+t.id,t.ora_fine,{label:'Fine'})}<button type="button" class="btn pic" onclick="ecOrari('${t.id}')">Salva orario</button></div>
       <div class="ecr"><select name="em_${t.id}" aria-label="Motivo annullo"><option>Chiusura</option><option>Pioggia</option><option>Altro</option></select><button type="button" class="btn pic del" onclick="ecAnnulla('${t.id}')">Annulla turno</button></div></div>`;
   });
@@ -1107,6 +1133,22 @@ async function ecPosto(tid,r,delta){
   const prima=t[campo]; t[campo]=nuovo; renderEC();   // si vede subito
   if(errore((await sb.from('tp_turni').update({[campo]:nuovo}).eq('id',tid)).error)){ t[campo]=prima; renderEC(); return; }
   await dopoEC(delta<0?'Posto chiuso.':'Posto riaperto.');
+}
+const MAX_POSTI=6;
+function selNum(name,min,max,val){ let s=`<select name="${name}">`; for(let i=min;i<=max;i++) s+=`<option ${i===val?'selected':''}>${i}</option>`; return s+'</select>'; }
+// avviso se i nuovi posti sono meno delle persone già in squadra (nessuno viene tolto)
+function avvisoCoperti(lista){
+  if(!lista.length) return '';
+  return '\n\nATTENZIONE: in '+(lista.length===1?'1 turno':lista.length+' turni')+' ci sono già più persone in squadra dei posti nuovi ('+lista.slice(0,6).join(', ')+(lista.length>6?'…':'')+'). Nessuno viene tolto: la squadra resterà con persone in più del previsto.';
+}
+function supera(t,F,Sx){ const a=S.ec.ass.filter(x=>x.turno_id===t.id); return a.filter(x=>x.ruolo==='F').length>F || a.filter(x=>x.ruolo==='S').length>Sx; }
+async function ecSalvaPosti(tid){
+  const t=S.ec.turni.find(x=>x.id===tid), F=+ecVal('pf_'+tid), Sx=+ecVal('ps_'+tid);
+  if(Sx<1){ toast('Ogni turno deve avere almeno uno stampatore.',true); return; }
+  if(F===t.fotografi && Sx===t.stampatori){ toast('I posti sono già questi.'); return; }
+  if(supera(t,F,Sx) && !confirm('Imposto '+F+' foto + '+Sx+' stampa.'+avvisoCoperti([descrT(t)])+'\n\nProcedo?')) return;
+  if(errore((await sb.from('tp_turni').update({fotografi:F, stampatori:Sx}).eq('id',tid)).error)) return;
+  await dopoEC('Posti salvati: '+F+' foto + '+Sx+' stampa.');
 }
 function altriDelGiorno(t, ini, fin){ return S.ec.turni.filter(x=>x.id!==t.id && x.data===t.data && siSovrappone(x,{ora_inizio:ini,ora_fine:fin})); }
 async function ecOrari(tid){
