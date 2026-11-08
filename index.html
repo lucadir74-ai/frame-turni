@@ -116,6 +116,7 @@ main{max-width:1100px;margin:0 auto;padding:16px}
 .gca{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .gca select{border:1px solid var(--line);border-radius:6px;padding:5px;font:inherit;flex:1;min-width:150px}
 @media (max-width:700px){ .calo .cr .nm{display:none} .calo .gg{min-height:70px} }
+@media (max-width:480px){ .calo{gap:3px} .calo .gg{padding:3px 2px;min-height:58px} .calo .cr{font-size:.66rem;gap:2px;padding:1px 2px;border-left-width:3px} .calo .wd{font-size:.7rem} }
 .pres{font-size:.88rem;margin:6px 0 0}
 .pres.ok{color:var(--ok);font-weight:600}
 .pres.da{color:var(--warn);font-weight:600}
@@ -226,6 +227,38 @@ dialog.largo{width:min(760px,96vw)}
 .ecgt.ann{border-left-color:var(--red);background:#FAFAFA}
 .ecr{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px}
 .ecr select,.ecr input{border:1px solid var(--line);border-radius:6px;padding:5px;font:inherit}
+/* bottoni secondari: tutti visibili su computer, in un menu su telefono */
+.altre{position:relative;display:contents}
+.altre-t{display:none}
+.altre-b{display:contents}
+/* telefono: area organizzatori */
+@media (max-width:640px){
+  .top{padding:10px 12px;gap:10px}
+  .top .chi{display:none}
+  .logo{height:30px}
+  nav{padding:0 4px;gap:0}
+  nav button{padding:10px 8px;font-size:.88rem}
+  main{padding:12px}
+  .barra{gap:6px}
+  .barra .mese{font-size:1.1rem;min-width:0;flex:1}
+  .barra .spazio{flex-basis:100%;height:0}
+  .altre{display:block}
+  .altre-t{display:inline-block}
+  .altre-b{display:none;position:absolute;z-index:6;top:100%;left:0;margin-top:4px;flex-direction:column;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px;box-shadow:0 6px 18px rgba(0,0,0,.15);min-width:15em}
+  .altre.on .altre-b{display:flex}
+  .altre-b .btn{text-align:left}
+  .evento{padding:10px 10px 10px 12px;border-left-width:6px}
+  .gr{flex-direction:column;gap:0}
+  .gr-d{flex:none;padding:8px 4px 0;font-size:.95rem}
+  .rg{padding:6px 4px 8px;gap:2px 10px}
+  .rg .or{min-width:0;width:100%;color:var(--ink);font-weight:600}
+  .menu-b{left:auto;right:0}
+  .dlg-h{padding:12px 14px}
+  .dlg-b{padding:14px}
+  .dlg-f{padding:10px 14px}
+  .cd .tag{display:none}
+  .riga b{min-width:0}
+}
 @media (max-width:560px){ .due{grid-template-columns:1fr} .barra .mese{min-width:auto} .ecal .eg{min-height:52px;padding:2px} .ecal .tr{gap:1px;font-size:.6rem} .ecal .tr span{display:none} .ecal .po{width:5px;height:5px;border-width:1px} .ecsel .note{display:none} }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -516,6 +549,8 @@ document.addEventListener('visibilitychange', async ()=>{
   await caricaMese(); disegna();
   const g2=document.querySelector('.griglia'); if(g2) g2.scrollLeft=sx; window.scrollTo(0,y);
 });
+// chiude il menu "Altre azioni" toccando fuori
+document.addEventListener('click', e=>{ document.querySelectorAll('.altre.on').forEach(a=>{ if(!a.contains(e.target)) a.classList.remove('on'); }); });
 async function cambiaMese(n){ S.mese=spostaMese(S.mese,n); await ricarica(); }
 function barraMese(extra){
   return `<div class="barra"><button class="btn pic" onclick="cambiaMese(-1)" aria-label="Mese precedente">‹</button><span class="mese">${nomeMese(S.mese)}</span><button class="btn pic" onclick="cambiaMese(1)" aria-label="Mese successivo">›</button><span class="spazio"></span>${extra||''}</div>`;
@@ -540,7 +575,9 @@ function analisiTurno(t){
 function vistaTurni(){
   const m=document.getElementById('main');
   const bozze=S.turni.filter(t=>!t.pubblicato && !t.annullato).length;
-  let h = barraMese(`<button class="btn" onclick="formLinkCalendario()">Link calendario</button><button class="btn" ${bozze?'':'disabled'} onclick="formProponi(false)">Proponi squadre</button><button class="btn" ${bozze?'':'disabled'} onclick="pubblicaMese()">Pubblica ${bozze||''} squadre del mese</button><button class="btn" onclick="formModificaBlocco()">Modifica più turni</button><button class="btn pri" onclick="formTurno()">Nuovo evento</button>`);
+  // su telefono i bottoni secondari stanno in "Altre azioni", su computer si vedono tutti
+  let h = barraMese(`<div class="altre"><button type="button" class="btn altre-t" onclick="this.parentNode.classList.toggle('on')" aria-label="Altre azioni">Altre azioni ▾</button><div class="altre-b" onclick="this.parentNode.classList.remove('on')">
+    <button class="btn" onclick="formLinkCalendario()">Link calendario</button><button class="btn" ${bozze?'':'disabled'} onclick="formProponi(false)">Proponi squadre</button><button class="btn" ${bozze?'':'disabled'} onclick="pubblicaMese()">Pubblica ${bozze||''} squadre del mese</button><button class="btn" onclick="formModificaBlocco()">Modifica più turni</button></div></div><button class="btn pri" onclick="formTurno()">Nuovo evento</button>`);
   if(S.ritiri && S.ritiri.length) h+='<div class="ritiri"><b>Ritiri da gestire</b>'+S.ritiri.map(r=>{const t=r.tp_turni||{}; const c=collabById(r.collaboratore_id)||{nome:'?'};
     return `<div class="rit"><span>${esc(c.nome)} si è ritirato/a da <b>${esc((piscinaById(t.piscina_id)||{nome:'?'}).nome)}</b>, ${t.data?nomeGiorno(t.data):''} ${hm(t.ora_inizio)}–${hm(t.ora_fine)}: era in squadra, il posto è scoperto.</span><button class="btn pic" onclick="ritiroVisto('${r.id}')">Visto</button></div>`}).join('')+'</div>';
   if(!S.piscine.some(p=>p.attiva)){ m.innerHTML=h+'<div class="vuoto">Prima inserisci le sedi nella scheda Sedi, poi potrai creare gli eventi.</div>'; return; }
