@@ -607,6 +607,7 @@ function cardEvento(e, turni){
     <div class="ev-stat"><span>${turni.length} turni questo mese</span>${validi.length?`<span class="${coperti>=validi.length?'pieno':'manca'}">candidati sufficienti ${coperti}/${validi.length}</span><span>squadre pubblicate ${pubb}/${validi.length}</span>`:''}${ann?`<span class="ko">annullati ${ann}</span>`:''}</div>
     <div class="azioni"><button class="btn pic ${aperto?'':'pri'}" onclick="apriEvento('${key}',${!aperto})">${aperto?'Nascondi turni':'Mostra turni'}</button>
       ${e && validi.length>pubb?`<button class="btn pic pri" onclick="pubblicaEvento('${e.id}')">Pubblica squadre (${validi.length-pubb})</button>`:''}
+      ${e && pubb?`<button class="btn pic" onclick="ritiraEvento('${e.id}')">Ritira squadre (${pubb})</button>`:''}
       ${e?`<button class="btn pic" onclick="apriCalEvento('${e.id}')">Calendario posti</button><button class="btn pic" onclick="formEvento('${e.id}')">Modifica evento</button><details class="menu"><summary class="btn pic" aria-label="Altre azioni">⋯</summary><div class="menu-b"><button class="btn pic del" onclick="eliminaEvento('${e.id}')">Elimina evento</button></div></details>`:''}</div>`;
   if(aperto && turni.length) h+='<div class="ev-giorni">'+[...new Set(turni.map(t=>t.data))].map(g=>{
     const [y,m,d]=g.split('-').map(Number), giorno=new Date(y,m-1,d).toLocaleDateString('it-IT',{weekday:'short',day:'numeric',month:'short'});
@@ -1225,6 +1226,13 @@ async function pubblicaEvento(id){
   if(!confirm('Pubblicare le squadre di tutti i turni di “'+e.nome+'”? I collaboratori vedranno chi è in squadra.')) return;
   if(errore((await sb.from('tp_turni').update({pubblicato:true}).eq('evento_id',id).eq('pubblicato',false).eq('annullato',false)).error)) return;
   toast('Squadre dell\'evento pubblicate.'); ricarica();
+}
+// rimette in bozza tutte le squadre dell'evento (anche dei mesi non visualizzati): le assegnazioni restano
+async function ritiraEvento(id){
+  const e=(S.eventi||[]).find(x=>x.id===id); if(!e) return;
+  if(!confirm('Ritirare le squadre pubblicate di tutto “'+e.nome+'”?\n\nI collaboratori non vedranno più chi è in squadra. Le assegnazioni restano: potete correggerle e ripubblicare.')) return;
+  if(errore((await sb.from('tp_turni').update({pubblicato:false}).eq('evento_id',id).eq('pubblicato',true)).error)) return;
+  toast('Squadre dell\'evento ritirate: ora sono da pubblicare.'); ricarica();
 }
 // ---------- ANNULLO E PRESENZE ----------
 function formAnnulla(id){
