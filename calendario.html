@@ -95,6 +95,7 @@ main{max-width:640px;margin:0 auto;padding:16px}
 .pill{border:2px solid var(--c);background:#fff;color:var(--c);border-radius:6px;height:22px;padding:0;font:700 .72rem var(--fc);line-height:1}
 .pill.si{background:var(--c);color:#fff}
 .pill.ann{border-style:dashed;opacity:.45;text-decoration:line-through}
+.pill.pass{opacity:.4}
 .pill.piu{border-color:var(--line);color:var(--muted)}
 .btnblocco{width:100%;background:var(--card);border:1px solid var(--water);color:var(--water);border-radius:10px;padding:11px;font-weight:600;margin:12px 0 4px}
 .velo .box.foglio{max-height:85vh;overflow:auto}
@@ -208,10 +209,10 @@ function vistaTurni(){
   const sedi=[...new Set(S.turni.map(t=>t.piscina))].sort();
   if(S.sede && !sedi.includes(S.sede)) S.sede=null;
   let lista = S.turni.filter(t=> !S.sede || t.piscina===S.sede);
-  if(S.vista==='miei') lista=lista.filter(mio);
+  if(S.vista==='miei'){ const o=oggiStr(); lista=lista.filter(t=>mio(t) && t.data>=o); }
   lista=[...lista].sort((x,y)=>x.data.localeCompare(y.data)||hm(x.ora_inizio).localeCompare(hm(y.ora_inizio)));
   let h = S.vista==='miei'
-    ? '<p class="intro">I turni a cui ti sei candidato e quelli in cui sei in squadra.</p>'
+    ? '<p class="intro">I turni da oggi in poi a cui ti sei candidato e quelli in cui sei in squadra.</p>'
     : '<p class="intro">Tocca <b>Mi candido</b> sui turni che puoi fare. Ci si può candidare anche se ci sono già altri: la squadra la scelgono gli organizzatori e, quando è pubblicata, la trovi qui.</p>';
   if(sedi.length>1) h+='<div class="sedi"><button aria-current="'+(!S.sede)+'" onclick="filtraSede(null)">Tutte</button>'+sedi.map(n=>`<button aria-current="${S.sede===n}" onclick='filtraSede(${JSON.stringify(n).replace(/'/g,"&#39;")})'>${esc(n)}</button>`).join('')+'</div>';
   if(!lista.length){ m.innerHTML=h+'<div class="vuoto">'+(S.vista==='miei'?'Non ti sei ancora candidato a nessun turno.':'Al momento non ci sono turni in programma.')+'</div>'; return; }
@@ -226,10 +227,13 @@ function vistaTurni(){
 
 function scheda(t){
   const io=S.io.id, cand=t.candidati.some(x=>x.id===io), sq=inSquadra(t);
+  // libero = entro 48 ore ma solo candidato e la squadra è già pubblicata senza di lui: può togliersi da solo
+  const ore=oreAlTurno(t), libero = !sq && t.pubblicato;
   let azione='';
   if(t.annullato) azione='';
+  else if(ore<=0) azione=`<p class="note48">${t.data<oggiStr()?'Turno concluso.':'Turno già iniziato.'}${sq?' Eri in squadra.':''}</p>`;
   else if(!cand && !sq) azione=`<button class="btnpri" onclick="candida('${t.id}',true)">Mi candido</button>`;
-  else if(oreAlTurno(t)>48) azione=`<div class="stato-io">✓ ${sq?'Sei in squadra':'Ti sei candidato'}</div>`
+  else if(ore>48 || libero) azione=`<div class="stato-io">✓ ${sq?'Sei in squadra':'Ti sei candidato'}</div>`
     + (S.vista==='miei' ? '<p class="note48">Per ritirarti tocca il turno nel Calendario.</p>' : `<button class="btnsec" style="margin-top:8px" onclick="candida('${t.id}',false)">Ritirati</button>`);
   else azione=`<div class="stato-io">✓ ${sq?'Sei in squadra':'Ti sei candidato'}</div><p class="note48">Mancano meno di 48 ore: per ritirarti avvisa Betty.</p>
     <a class="btnwa" target="_blank" rel="noopener" href="${linkWa('Ciao Betty, sono '+S.io.nome+'. Non riesco a fare il turno '+descrTurno(t)+': puoi togliermi?')}">Scrivi a Betty su WhatsApp</a>`;
@@ -272,9 +276,9 @@ function vistaCal(){
     const tg=S.turni.filter(t=>t.data===d).sort((a,b)=>a.piscina.localeCompare(b.piscina)||hm(a.ora_inizio).localeCompare(hm(b.ora_inizio)));
     const mostra=tg.length>4?tg.slice(0,3):tg;
     h+=`<div class="gg ${tg.length?'':'off'} ${d===oggi?'oggi':''}"><button class="num" onclick="apriGiorno('${d}')" ${tg.length?'':'disabled'}>${g}</button><div class="pills">`
-      + mostra.map(t=>{ const si=mio(t), sq=inSquadra(t);
+      + mostra.map(t=>{ const si=mio(t), sq=inSquadra(t), pass=!t.annullato && oreAlTurno(t)<=0;
           const lett=fasciaDi(t);
-          return `<button class="pill ${t.annullato?'ann':''} ${si?'si':''}" style="--c:${coloreT(t)}" title="${esc(t.piscina)} ${hm(t.ora_inizio)}–${hm(t.ora_fine)}" onclick="tocco('${t.id}')">${sq?'★':si?'✓':lett}</button>`; }).join('')
+          return `<button class="pill ${t.annullato?'ann':''} ${pass?'pass':''} ${si?'si':''}" style="--c:${coloreT(t)}" title="${esc(t.piscina)} ${hm(t.ora_inizio)}–${hm(t.ora_fine)}" onclick="tocco('${t.id}')">${sq?'★':si?'✓':lett}</button>`; }).join('')
       + (tg.length>4?`<button class="pill piu" onclick="apriGiorno('${d}')">+${tg.length-3}</button>`:'')
       + '</div></div>';
   }
@@ -286,8 +290,9 @@ function vistaCal(){
 async function tocco(id){
   const t=S.turni.find(x=>x.id===id);
   if(t.annullato){ toast('Turno annullato'+(t.motivo?' ('+t.motivo+')':'')+'.'); return; }
+  if(oreAlTurno(t)<=0){ toast(t.data<oggiStr()?'Turno concluso.':'Turno già iniziato.'); return; }
   if(!mio(t)) return candida(id,true);
-  if(oreAlTurno(t)<=48 || inSquadra(t)) return apriGiorno(t.data);   // ritiro con avviso: si passa dal dettaglio
+  if((oreAlTurno(t)<=48 && !(t.pubblicato && !inSquadra(t))) || inSquadra(t)) return apriGiorno(t.data);   // ritiro con avviso: si passa dal dettaglio
   return candida(id,false,true);
 }
 

@@ -526,7 +526,7 @@ async function ricarica(){ await caricaMese(); disegna(); }
 // ---------- struttura ----------
 function disegna(){
   const nNuovi=S.collab.filter(c=>c.nuovo).length;
-  const tabs=[['turni','Eventi'],['disponibilita','Candidature'],['collaboratori','Collaboratori'+(nNuovi?' ('+nNuovi+' nuovi)':'')],['piscine','Sedi'],['riepilogo','Riepilogo']];
+  const tabs=[['turni','Eventi'],['disponibilita','Candidature'],['collaboratori','Collaboratori'+(nNuovi?' ('+nNuovi+(nNuovi===1?' nuovo)':' nuovi)'):'')],['piscine','Sedi'],['riepilogo','Riepilogo']];
   document.getElementById('app').innerHTML = `
   <header>
     <div class="top"><img class="logo" src="logo-bianco.png" alt="Frame About You"><h1>Turni</h1><span class="chi">${esc(S.me.nome)}</span><button onclick="esci()">Esci</button></div>
@@ -1483,7 +1483,7 @@ function calcolaProposta(includiNonIndicati){
   const nuove = [], esito = [];
   const carico = {}; S.collab.forEach(c=>carico[c.id]=lavoro.filter(a=>a.collaboratore_id===c.id).length);
   const imp = t => (piscinaById(t.piscina_id)||{importanza:1}).importanza;
-  const turni = S.turni.filter(t=>!t.pubblicato && !t.annullato).sort((a,b)=> (imp(b)-imp(a)) || a.data.localeCompare(b.data) || hm(a.ora_inizio).localeCompare(hm(b.ora_inizio)));
+  const turni = S.turni.filter(t=>!t.pubblicato && !t.annullato && t.data>=oggi()).sort((a,b)=> (imp(b)-imp(a)) || a.data.localeCompare(b.data) || hm(a.ora_inizio).localeCompare(hm(b.ora_inizio)));
 
   const disponibile = (c,t) => includiNonIndicati || S.cand.some(k=>k.turno_id===t.id && k.collaboratore_id===c.id);
   const altriTurniStessoGiorno = (c,t) => lavoro.filter(a=>a.collaboratore_id===c.id && a.turno_id!==t.id)
