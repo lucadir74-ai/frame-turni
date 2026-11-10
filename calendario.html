@@ -236,7 +236,7 @@ function scheda(t){
   else if(ore<=0) azione=`<p class="note48">${t.data<oggiStr()?'Turno concluso.':'Turno già iniziato.'}${sq?' Eri in squadra.':''}</p>`;
   else if(!cand && !sq) azione=`<button class="btnpri" onclick="candida('${t.id}',true)">Mi candido</button>`;
   else if(ore>48 || libero) azione=`<div class="stato-io">✓ ${sq?'Sei in squadra':'Ti sei candidato'}</div>`
-    + (S.vista==='miei' ? '<p class="note48">Per ritirarti tocca il turno nel Calendario.</p>' : `<button class="btnsec" style="margin-top:8px" onclick="candida('${t.id}',false)">Ritirati</button>`);
+    + '<p class="note48">Per toglierti ritocca il turno nel Calendario.</p>';
   else azione=`<div class="stato-io">✓ ${sq?'Sei in squadra':'Ti sei candidato'}</div><p class="note48">Mancano meno di 48 ore: per ritirarti avvisa Betty.</p>
     <a class="btnwa" target="_blank" rel="noopener" href="${linkWa('Ciao Betty, sono '+S.io.nome+'. Non riesco a fare il turno '+descrTurno(t)+': puoi togliermi?')}">Scrivi a Betty su WhatsApp</a>`;
   const nomi = arr => arr.map(x=>`<span class="${sonoIo(x)?'io':''}">${esc(x.nome)}${sonoIo(x)?' (tu)':''}</span>`).join(', ');
@@ -294,8 +294,8 @@ async function tocco(id){
   if(t.annullato){ toast('Turno annullato'+(t.motivo?' ('+t.motivo+')':'')+'.'); return; }
   if(oreAlTurno(t)<=0){ toast(t.data<oggiStr()?'Turno concluso.':'Turno già iniziato.'); return; }
   if(!mio(t)) return candida(id,true);
-  if((oreAlTurno(t)<=48 && !(t.pubblicato && !inSquadra(t))) || inSquadra(t)) return apriGiorno(t.data);   // ritiro con avviso: si passa dal dettaglio
-  return candida(id,false,true);
+  if(oreAlTurno(t)<=48 && !(t.pubblicato && !inSquadra(t))) return apriGiorno(t.data);   // meno di 48 ore: nel dettaglio c'è il messaggio per Betty
+  return candida(id,false,!inSquadra(t));   // chi è già in squadra conferma prima di togliersi, poi avvisa Betty
 }
 
 function apriGiorno(d,riapri){
