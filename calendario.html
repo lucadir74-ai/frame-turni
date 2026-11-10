@@ -113,7 +113,7 @@ main{max-width:640px;margin:0 auto;padding:16px}
 <div id="toast" role="status"></div>
 <script>
 const CHIAVE_NOME = 'frame_turni_io';
-let sb=null; const S={ staff:[], turni:[], io:null, vista:'cal', sede:null, mese:null, giorno:null };
+let sb=null; const S={ turni:[], io:null, vista:'cal', sede:null, mese:null, giorno:null };
 
 function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function hm(t){ return (t||'').slice(0,5); }
@@ -130,14 +130,24 @@ async function avvio(){
   if(!window.supabase) return messaggio('Connessione assente: ricarica la pagina.');
   if(!/^https:\/\/.+\.supabase\.co/.test(window.SUPABASE_URL||'')) return messaggio('Configurazione mancante.');
   sb = supabase.createClient(window.SUPABASE_URL, window.SUPABASE_KEY, { auth:{ persistSession:false } });
-  const { data, error } = await sb.rpc('tp_pub_calendario');
-  if(error) return messaggio('Non riesco a caricare il calendario. Riprova tra poco.');
-  S.staff=data.staff||[]; S.turni=data.turni||[];
   const salvato=leggiIo();
-  S.io = S.staff.find(c=>c.id===salvato) || null;
-  if(!S.io) return formIscrizione();
+  if(!salvato) return formIscrizione();
+  const r = await carica(salvato);
+  if(!r) return messaggio('Non riesco a caricare il calendario. Riprova tra poco.');
+  S.io = r.io;
+  if(!S.io){ scriviIo(null); return formIscrizione(); }
   disegna();
 }
+// Legge i turni per il collaboratore indicato. Il database risponde solo a chi è iscritto e non manda gli id degli altri:
+// ogni nome arriva con io=true/false. (Finché nel database c'è la funzione vecchia, senza parametro, si usa quella.)
+async function carica(id){
+  let r = await sb.rpc('tp_pub_calendario', { p_collab:id });
+  if(r.error) r = await sb.rpc('tp_pub_calendario');
+  if(r.error || !r.data) return null;
+  S.turni = r.data.turni||[];
+  return { io: r.data.io || (r.data.staff||[]).find(c=>c.id===id) || null };
+}
+const sonoIo = x => x.io===true || (x.id!=null && x.id===S.io.id);
 
 function formIscrizione(){
   document.getElementById('app').innerHTML = `<header><div class="top"><img class="logo" src="logo-bianco.png" alt="Frame About You"><h1>Chi sei?</h1></div><div class="corsia"></div></header>
@@ -163,17 +173,16 @@ async function inviaIscrizione(ev){
   const { data, error } = await sb.rpc('tp_pub_iscrivi', { p_nome:f.nome.value, p_telefono:f.telefono.value, p_email:f.email.value,
     p_ruolo:f.ruolo.value, p_auto:f.auto.value==='1' });
   if(error){ b.disabled=false; b.textContent='Entra'; toast(error.message||'Non riesco a iscriverti, riprova.',true); return; }
-  if(!S.staff.some(c=>c.id===data.id)) S.staff.push({ id:data.id, nome:data.nome });
+  S.io={ id:data.id, nome:data.nome };
+  if(!await carica(data.id)){ S.io=null; b.disabled=false; b.textContent='Entra'; toast('Non riesco a caricare il calendario, riprova.',true); return; }
+  scriviIo(data.id);
   toast(data.esistente ? 'Bentornato, '+data.nome+'.' : 'Iscrizione fatta!');
-  await scegli(data.id);
+  disegna();
 }
 const WA_ORG = '393351755398';   // WhatsApp di Betty per gli avvisi di ritiro
-async function scegli(id){ S.io=S.staff.find(c=>c.id===id); scriviIo(id); disegna(); }
 function cambiaNome(){ if(!confirm('Vuoi uscire? Per rientrare dovrai riscrivere i tuoi dati.')) return; scriviIo(null); S.io=null; formIscrizione(); }
 async function ricarica(){
-  const { data, error } = await sb.rpc('tp_pub_calendario');
-  if(error){ toast('Non riesco ad aggiornare, riprova.',true); return; }
-  S.staff=data.staff||[]; S.turni=data.turni||[];
+  if(!await carica(S.io.id)) toast('Non riesco ad aggiornare, riprova.',true);
 }
 
 function disegna(){
@@ -186,8 +195,8 @@ function disegna(){
 function vai(v){ S.vista=v; disegna(); window.scrollTo(0,0); }
 function filtraSede(v){ S.sede=v; vistaTurni(); }
 
-const mio = t => t.candidati.some(x=>x.id===S.io.id) || t.squadra.some(x=>x.id===S.io.id);
-const inSquadra = t => t.squadra.some(x=>x.id===S.io.id);
+const mio = t => t.candidati.some(sonoIo) || t.squadra.some(sonoIo);
+const inSquadra = t => t.squadra.some(sonoIo);
 function oreAlTurno(t){ const [y,m,g]=t.data.split('-').map(Number); const [h,mi]=hm(t.ora_inizio).split(':').map(Number); return (new Date(y,m-1,g,h,mi)-Date.now())/3600000; }
 function lunedi(d){ const [y,m,g]=d.split('-').map(Number); const x=new Date(y,m-1,g); x.setDate(x.getDate()-((x.getDay()+6)%7)); return x; }
 function titoloSettimana(l){ const e=new Date(l); e.setDate(e.getDate()+6);
@@ -219,7 +228,7 @@ function vistaTurni(){
 }
 
 function scheda(t){
-  const io=S.io.id, cand=t.candidati.some(x=>x.id===io), sq=inSquadra(t);
+  const cand=t.candidati.some(sonoIo), sq=inSquadra(t);
   // libero = entro 48 ore ma solo candidato e la squadra è già pubblicata senza di lui: può togliersi da solo
   const ore=oreAlTurno(t), libero = !sq && t.pubblicato;
   let azione='';
@@ -230,12 +239,12 @@ function scheda(t){
     + (S.vista==='miei' ? '<p class="note48">Per ritirarti tocca il turno nel Calendario.</p>' : `<button class="btnsec" style="margin-top:8px" onclick="candida('${t.id}',false)">Ritirati</button>`);
   else azione=`<div class="stato-io">✓ ${sq?'Sei in squadra':'Ti sei candidato'}</div><p class="note48">Mancano meno di 48 ore: per ritirarti avvisa Betty.</p>
     <a class="btnwa" target="_blank" rel="noopener" href="${linkWa('Ciao Betty, sono '+S.io.nome+'. Non riesco a fare il turno '+descrTurno(t)+': puoi togliermi?')}">Scrivi a Betty su WhatsApp</a>`;
-  const nomi = arr => arr.map(x=>`<span class="${x.id===io?'io':''}">${esc(x.nome)}${x.id===io?' (tu)':''}</span>`).join(', ');
+  const nomi = arr => arr.map(x=>`<span class="${sonoIo(x)?'io':''}">${esc(x.nome)}${sonoIo(x)?' (tu)':''}</span>`).join(', ');
   return `<div class="giorno ${t.annullato?'annullato':''} ${sq?'mio':''}">
     <h2>${nomeGiorno(t.data)}</h2>
     <div class="pisc"><b>${esc(t.piscina)}</b> <span class="ore">${hm(t.ora_inizio)}–${hm(t.ora_fine)}</span>${t.annullato?`<span class="annullo">ANNULLATO${t.motivo?' · '+esc(t.motivo):''}</span>`:''}</div>
     ${t.annullato?'':`<div class="squadra">Servono: ${posti(t)}</div>`}
-    ${t.pubblicato && t.squadra.length?`<div class="squadra"><b>Squadra:</b> ${t.squadra.map(x=>`<span class="${x.id===io?'io':''}"><span class="tag ${x.ruolo}">${x.ruolo==='F'?'FOTO':'STAMPA'}</span>${esc(x.nome)}${x.id===io?' (tu)':''}</span>`).join(' ')}</div>`:''}
+    ${t.pubblicato && t.squadra.length?`<div class="squadra"><b>Squadra:</b> ${t.squadra.map(x=>`<span class="${sonoIo(x)?'io':''}"><span class="tag ${x.ruolo}">${x.ruolo==='F'?'FOTO':'STAMPA'}</span>${esc(x.nome)}${sonoIo(x)?' (tu)':''}</span>`).join(' ')}</div>`:''}
     ${t.annullato?'':`<div class="squadra">${t.candidati.length?`<b>Candidati (${t.candidati.length}):</b> ${nomi(t.candidati)}`:'Ancora nessun candidato'}</div>`}
     ${azione?`<div class="az">${azione}</div>`:''}
   </div>`;
@@ -246,7 +255,7 @@ const PALETTE=['#EB0089','#1E6FD9','#E07B00','#2E9D5B','#7B3FC4','#00A3A3','#C83
 function coloreT(t){ if(t.colore) return t.colore; let h=0; for(const ch of String(t.piscina_id||t.piscina)) h=(h*31+ch.charCodeAt(0))>>>0; return PALETTE[h%PALETTE.length]; }
 function oggiStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function aggiorna(){ if(S.vista==='miei') vistaTurni(); else { vistaCal(); if(S.giorno) apriGiorno(S.giorno,true); } }
-function sovrapposti(t){ if(!t) return []; return S.turni.filter(x=>x.id!==t.id && x.data===t.data && !x.annullato && x.candidati.some(c=>c.id===S.io.id)
+function sovrapposti(t){ if(!t) return []; return S.turni.filter(x=>x.id!==t.id && x.data===t.data && !x.annullato && x.candidati.some(sonoIo)
   && hm(x.ora_inizio)<hm(t.ora_fine) && hm(t.ora_inizio)<hm(x.ora_fine)); }
 function mesiConTurni(){ return [...new Set(S.turni.map(t=>t.data.slice(0,7)))].sort(); }
 function cambiaMeseCal(n){ const [y,m]=S.mese.split('-').map(Number); const d=new Date(y,m-1+n,1); S.mese=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); vistaCal(); }
