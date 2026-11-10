@@ -47,8 +47,6 @@ main{max-width:640px;margin:0 auto;padding:16px}
 .tag.S{background:var(--grigio)}
 .giorno.annullato{opacity:.6}
 .annullo{display:inline-block;font-weight:700;font-size:.8rem;color:var(--red);margin-left:6px}
-.chi{display:grid;gap:8px}
-.chi button{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;text-align:left;font-weight:600;font-size:1.05rem}
 .vuoto{background:var(--card);border:1px dashed var(--line);border-radius:12px;padding:26px;text-align:center;color:var(--muted)}
 .iscr{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
 .campo{display:grid;gap:4px;margin-bottom:12px}
@@ -137,19 +135,14 @@ async function avvio(){
   S.staff=data.staff||[]; S.turni=data.turni||[];
   const salvato=leggiIo();
   S.io = S.staff.find(c=>c.id===salvato) || null;
-  if(!S.io) return sceltaNome();
+  if(!S.io) return formIscrizione();
   disegna();
 }
 
-function sceltaNome(){
-  document.getElementById('app').innerHTML = `<header><div class="top"><img class="logo" src="logo-bianco.png" alt="Frame About You"><h1>Chi sei?</h1></div><div class="corsia"></div></header>
-  <main><p class="intro">Tocca il tuo nome. Questo telefono se lo ricorderà.</p>
-  <div class="chi">${S.staff.map(c=>`<button onclick="scegli('${c.id}')">${esc(c.nome)}</button>`).join('') || '<div class="vuoto">Ancora nessuno in elenco: iscriviti tu per primo.</div>'}</div>
-  <button class="btnsec" onclick="formIscrizione()">Non sei in elenco? Iscriviti</button></main>`;
-}
 function formIscrizione(){
-  document.getElementById('app').innerHTML = `<header><div class="top"><img class="logo" src="logo-bianco.png" alt="Frame About You"><h1>Iscriviti</h1><button onclick="sceltaNome()">Indietro</button></div><div class="corsia"></div></header>
-  <main><form class="iscr" id="fIscr" onsubmit="inviaIscrizione(event)">
+  document.getElementById('app').innerHTML = `<header><div class="top"><img class="logo" src="logo-bianco.png" alt="Frame About You"><h1>Chi sei?</h1></div><div class="corsia"></div></header>
+  <main><p class="intro">Scrivi i tuoi dati per vedere il calendario. Se ti sei già iscritto, rimetti gli stessi dati di allora: ti riconosciamo e ritrovi i tuoi turni.</p>
+  <form class="iscr" id="fIscr" onsubmit="inviaIscrizione(event)">
     <label class="campo"><span>Nome e cognome</span><input name="nome" autocomplete="name" required maxlength="80"></label>
     <label class="campo"><span>Telefono</span><input name="telefono" type="tel" autocomplete="tel" required></label>
     <label class="campo"><span>Email</span><input name="email" type="email" autocomplete="email" required maxlength="120"></label>
@@ -161,7 +154,7 @@ function formIscrizione(){
       <label><input type="radio" name="auto" value="1" required>Sì</label>
       <label><input type="radio" name="auto" value="0">No</label></div></div>
     <p class="privacy">Telefono ed email li vedono solo gli organizzatori di Frame About You e servono solo a organizzare i turni. Gli altri collaboratori vedono soltanto il tuo nome.</p>
-    <button class="btnpri" type="submit">Iscriviti</button>
+    <button class="btnpri" type="submit">Entra</button>
   </form></main>`;
 }
 async function inviaIscrizione(ev){
@@ -169,14 +162,14 @@ async function inviaIscrizione(ev){
   b.disabled=true; b.textContent='Invio…';
   const { data, error } = await sb.rpc('tp_pub_iscrivi', { p_nome:f.nome.value, p_telefono:f.telefono.value, p_email:f.email.value,
     p_ruolo:f.ruolo.value, p_auto:f.auto.value==='1' });
-  if(error){ b.disabled=false; b.textContent='Iscriviti'; toast(error.message||'Non riesco a iscriverti, riprova.',true); return; }
+  if(error){ b.disabled=false; b.textContent='Entra'; toast(error.message||'Non riesco a iscriverti, riprova.',true); return; }
   if(!S.staff.some(c=>c.id===data.id)) S.staff.push({ id:data.id, nome:data.nome });
-  toast(data.esistente ? 'Eri già in elenco come '+data.nome+'.' : 'Iscrizione fatta!');
+  toast(data.esistente ? 'Bentornato, '+data.nome+'.' : 'Iscrizione fatta!');
   await scegli(data.id);
 }
 const WA_ORG = '393351755398';   // WhatsApp di Betty per gli avvisi di ritiro
 async function scegli(id){ S.io=S.staff.find(c=>c.id===id); scriviIo(id); disegna(); }
-function cambiaNome(){ scriviIo(null); S.io=null; sceltaNome(); }
+function cambiaNome(){ if(!confirm('Vuoi uscire? Per rientrare dovrai riscrivere i tuoi dati.')) return; scriviIo(null); S.io=null; formIscrizione(); }
 async function ricarica(){
   const { data, error } = await sb.rpc('tp_pub_calendario');
   if(error){ toast('Non riesco ad aggiornare, riprova.',true); return; }
