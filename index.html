@@ -1475,7 +1475,7 @@ function formLinkCalendario(){
   apriDialog('Link calendario', `
     <p style="margin:0 0 10px">Lo stesso link per tutti i collaboratori. Al primo accesso scelgono il proprio nome e il telefono se lo ricorda.</p>
     <p class="note" style="word-break:break-all;margin:0 0 12px">${esc(url)}</p>
-    <p class="note" style="margin:0 0 12px">Mostra solo nomi, date, orari e sedi: niente contatti, livelli, importanza o cifre.</p>
+    <p class="note" style="margin:0 0 12px">Mostra solo date, orari e la propria candidatura: niente elenco dei candidati, contatti, livelli o cifre. Il nome della sede si vede solo per le sedi con “Nome visibile” (es. Christmas World); per le altre i ragazzi vedono solo la giornata e la fascia, e la sede la scopre chi è nella squadra pubblicata.</p>
     <div class="azioni">
       <button type="button" class="btn pic" onclick="copia('${url}')">Copia link</button>
       <a class="btn pic pri" style="text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(testo)}">Manda su WhatsApp</a>
@@ -1707,6 +1707,8 @@ async function eliminaCollab(id){
 }
 
 // ---------- PISCINE ----------
+// prima dello SQL la colonna non c'è: vale la stessa regola di calendario.html (visibile solo "Christmas")
+function sedeVisibile(p){ if(!p) return false; return 'nome_visibile' in p ? !!p.nome_visibile : /christmas/i.test(p.nome||''); }
 function vistaPiscine(){
   const m=document.getElementById('main');
   let h='<div class="barra"><span class="spazio"></span><button class="btn pri" onclick="formPiscina()">Nuova sede</button></div>';
@@ -1714,6 +1716,7 @@ function vistaPiscine(){
   h+='<div class="lista">'+S.piscine.map(p=>`<div class="riga ${p.attiva?'':'off'}">
     <span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${coloreSede(p)}" title="Colore nel calendario"></span><b>${esc(p.nome)}</b>${puntini(p.importanza)}
     ${p.attiva?'':'<span class="tag">non attiva</span>'}
+    <span class="tag" title="Come la vedono i collaboratori nel calendario">${sedeVisibile(p)?'nome visibile':'nascosta ai ragazzi'}</span>
     <span class="info">${[p.indirizzo,p.contatto].filter(Boolean).map(esc).join(', ')}</span>
     <button class="btn pic" onclick="formPiscina('${p.id}')">Modifica</button></div>`).join('')+'</div>';
   m.innerHTML=h;
@@ -1728,11 +1731,17 @@ function formPiscina(id){
     <label class="campo"><span>Referente e contatto</span><input name="contatto" value="${esc(p?.contatto)}"></label>
     <label class="campo"><span>Note</span><textarea name="note" rows="2">${esc(p?.note)}</textarea></label>
     <label class="spunta"><input type="checkbox" name="attiva" ${!p||p.attiva?'checked':''}> Attiva</label>
+    <label class="spunta"><input type="checkbox" name="visibile" ${sedeVisibile(p)?'checked':''}> Nome visibile ai collaboratori</label>
+    <p class="note" style="margin:-4px 0 12px">Senza spunta (es. le piscine) i ragazzi vedono solo la giornata e la fascia in cui serve disponibilità: niente nome della sede. Lo scopre solo chi è nella squadra pubblicata.</p>
     ${p?`<button type="button" class="btn pic del" onclick="eliminaPiscina('${p.id}')">Elimina sede</button>`:''}`,
   async f=>{
     const rec={ nome:f.nome.value.trim().replace(/\s+/g,' '), importanza:+f.importanza.value, indirizzo:f.indirizzo.value.trim()||null,
-      contatto:f.contatto.value.trim()||null, note:f.note.value.trim()||null, attiva:f.attiva.checked, colore:f.colore.value };
-    const r = p ? await sb.from('tp_piscine').update(rec).eq('id',p.id) : await sb.from('tp_piscine').insert(rec);
+      contatto:f.contatto.value.trim()||null, note:f.note.value.trim()||null, attiva:f.attiva.checked, colore:f.colore.value, nome_visibile:f.visibile.checked };
+    const salva = x => p ? sb.from('tp_piscine').update(x).eq('id',p.id) : sb.from('tp_piscine').insert(x);
+    let r = await salva(rec);
+    // colonna non ancora creata (SQL da eseguire): salva il resto
+    if(r.error && /nome_visibile/.test(r.error.message||'')){ delete rec.nome_visibile; r=await salva(rec);
+      if(!r.error) toast('Sede salvata, ma la spunta “Nome visibile” funziona solo dopo aver eseguito sql-sedi-nascoste.sql.',true); }
     if(errore(r.error)) return false;
     toast('Sede salvata.'); await caricaTutto();
   }, 'Salva');

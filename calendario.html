@@ -132,13 +132,51 @@ async function avvio(){
   if(!window.supabase) return messaggio('Connessione assente: ricarica la pagina.');
   if(!/^https:\/\/.+\.supabase\.co/.test(window.SUPABASE_URL||'')) return messaggio('Configurazione mancante.');
   sb = supabase.createClient(window.SUPABASE_URL, window.SUPABASE_KEY, { auth:{ persistSession:false } });
-  const { data, error } = await sb.rpc('tp_pub_calendario');
-  if(error) return messaggio('Non riesco a caricare il calendario. Riprova tra poco.');
-  S.staff=data.staff||[]; S.turni=data.turni||[];
   const salvato=leggiIo();
+  if(!await carica(salvato)) return messaggio('Non riesco a caricare il calendario. Riprova tra poco.');
   S.io = S.staff.find(c=>c.id===salvato) || null;
   if(!S.io) return sceltaNome();
   disegna();
+}
+
+// Legge il calendario. Le sedi "nascoste" (le piscine) non mandano nome né candidati: il ragazzo vede solo la giornata
+// in cui serve disponibilità. Il nome arriva solo a chi è nella squadra pubblicata (deve sapere dove andare).
+// Se lo SQL nuovo non è ancora stato eseguito usa la funzione vecchia e nasconde qui (visibile solo "Christmas").
+const NOME_NASCOSTO='Disponibilità';
+async function carica(io){
+  let vecchia=false, r=await sb.rpc('tp_pub_calendario_io', { p_collab: io||null });
+  if(r.error && /tp_pub_calendario_io|PGRST202|could not find|does not exist/i.test((r.error.code||'')+' '+(r.error.message||''))){ vecchia=true; r=await sb.rpc('tp_pub_calendario'); }
+  if(r.error) return false;
+  S.staff=r.data.staff||[];
+  S.turni=raggruppa((r.data.turni||[]).map(t=>normalizza(t,vecchia,io)));
+  return true;
+}
+function normalizza(t,vecchia,io){
+  const vis = vecchia ? /christmas/i.test(t.piscina||'') : !!t.visibile;
+  const mioC = vecchia ? (t.candidati||[]).some(x=>x.id===io) : !!t.mio_cand;
+  const sq = t.pubblicato ? (t.squadra||[]) : [];
+  const ioSq = sq.some(x=>x.id===io);
+  return { ...t, visibile:vis, piscina:(vis||ioSq)?t.piscina:NOME_NASCOSTO, colore:vis?t.colore:null,
+    candidati: mioC?[{id:io}]:[], squadra:(vis||ioSq)?sq:[], ids:[t.id], mieiIds:mioC?[t.id]:[] };
+}
+// i turni delle sedi nascoste dello stesso giorno e della stessa fascia diventano una sola "disponibilità"
+function raggruppa(lista){
+  const out=[], gruppi={};
+  for(const t of lista){
+    if(t.piscina!==NOME_NASCOSTO){ out.push(t); continue; }
+    const k=t.data+'_'+fasciaDi(t); (gruppi[k]=gruppi[k]||[]).push(t);
+  }
+  for(const [k,g] of Object.entries(gruppi)){
+    if(g.length===1){ out.push(g[0]); continue; }
+    const validi=g.filter(t=>!t.annullato), base=validi.length?validi:g;
+    out.push({ id:'g_'+k, gruppo:true, data:g[0].data, piscina:NOME_NASCOSTO, visibile:false, colore:null,
+      ora_inizio:base.map(t=>hm(t.ora_inizio)).sort()[0], ora_fine:base.map(t=>hm(t.ora_fine)).sort().pop(),
+      fotografi:0, stampatori:0, annullato:!validi.length, motivo:validi.length?null:g[0].motivo,
+      pubblicato:validi.length>0 && validi.every(t=>t.pubblicato),
+      candidati:g.some(t=>t.candidati.length)?[{id:g.find(t=>t.candidati.length).candidati[0].id}]:[], squadra:[],
+      ids:validi.map(t=>t.id), mieiIds:g.flatMap(t=>t.mieiIds) });
+  }
+  return out.sort((a,b)=>a.data.localeCompare(b.data)||hm(a.ora_inizio).localeCompare(hm(b.ora_inizio)));
 }
 
 function sceltaNome(){
@@ -175,12 +213,10 @@ async function inviaIscrizione(ev){
   await scegli(data.id);
 }
 const WA_ORG = '393351755398';   // WhatsApp di Betty per gli avvisi di ritiro
-async function scegli(id){ S.io=S.staff.find(c=>c.id===id); scriviIo(id); disegna(); }
+async function scegli(id){ S.io=S.staff.find(c=>c.id===id); scriviIo(id); await carica(id); S.io=S.staff.find(c=>c.id===id)||S.io; disegna(); }
 function cambiaNome(){ scriviIo(null); S.io=null; sceltaNome(); }
 async function ricarica(){
-  const { data, error } = await sb.rpc('tp_pub_calendario');
-  if(error){ toast('Non riesco ad aggiornare, riprova.',true); return; }
-  S.staff=data.staff||[]; S.turni=data.turni||[];
+  if(!await carica(S.io&&S.io.id)) toast('Non riesco ad aggiornare, riprova.',true);
 }
 
 function disegna(){
@@ -213,7 +249,7 @@ function vistaTurni(){
   lista=[...lista].sort((x,y)=>x.data.localeCompare(y.data)||hm(x.ora_inizio).localeCompare(hm(y.ora_inizio)));
   let h = S.vista==='miei'
     ? '<p class="intro">I turni da oggi in poi a cui ti sei candidato e quelli in cui sei in squadra.</p>'
-    : '<p class="intro">Tocca <b>Mi candido</b> sui turni che puoi fare. Ci si può candidare anche se ci sono già altri: la squadra la scelgono gli organizzatori e, quando è pubblicata, la trovi qui.</p>';
+    : '<p class="intro">Tocca <b>Mi candido</b> sui turni che puoi fare. La squadra la scelgono gli organizzatori e, quando è pubblicata, la trovi qui.</p>';
   if(sedi.length>1) h+='<div class="sedi"><button aria-current="'+(!S.sede)+'" onclick="filtraSede(null)">Tutte</button>'+sedi.map(n=>`<button aria-current="${S.sede===n}" onclick='filtraSede(${JSON.stringify(n).replace(/'/g,"&#39;")})'>${esc(n)}</button>`).join('')+'</div>';
   if(!lista.length){ m.innerHTML=h+'<div class="vuoto">'+(S.vista==='miei'?'Non ti sei ancora candidato a nessun turno.':'Al momento non ci sono turni in programma.')+'</div>'; return; }
   let sett=null;
@@ -237,20 +273,19 @@ function scheda(t){
     + (S.vista==='miei' ? '<p class="note48">Per ritirarti tocca il turno nel Calendario.</p>' : `<button class="btnsec" style="margin-top:8px" onclick="candida('${t.id}',false)">Ritirati</button>`);
   else azione=`<div class="stato-io">✓ ${sq?'Sei in squadra':'Ti sei candidato'}</div><p class="note48">Mancano meno di 48 ore: per ritirarti avvisa Betty.</p>
     <a class="btnwa" target="_blank" rel="noopener" href="${linkWa('Ciao Betty, sono '+S.io.nome+'. Non riesco a fare il turno '+descrTurno(t)+': puoi togliermi?')}">Scrivi a Betty su WhatsApp</a>`;
-  const nomi = arr => arr.map(x=>`<span class="${x.id===io?'io':''}">${esc(x.nome)}${x.id===io?' (tu)':''}</span>`).join(', ');
   return `<div class="giorno ${t.annullato?'annullato':''} ${sq?'mio':''}">
     <h2>${nomeGiorno(t.data)}</h2>
     <div class="pisc"><b>${esc(t.piscina)}</b> <span class="ore">${hm(t.ora_inizio)}–${hm(t.ora_fine)}</span>${t.annullato?`<span class="annullo">ANNULLATO${t.motivo?' · '+esc(t.motivo):''}</span>`:''}</div>
-    ${t.annullato?'':`<div class="squadra">Servono: ${posti(t)}</div>`}
+    ${t.annullato||!t.visibile?'':`<div class="squadra">Servono: ${posti(t)}</div>`}
+    ${!t.visibile && !sq && !t.annullato?'<div class="squadra">Serve disponibilità per questa fascia: dove e con chi lo sai quando la squadra è pubblicata.</div>':''}
     ${t.pubblicato && t.squadra.length?`<div class="squadra"><b>Squadra:</b> ${t.squadra.map(x=>`<span class="${x.id===io?'io':''}"><span class="tag ${x.ruolo}">${x.ruolo==='F'?'FOTO':'STAMPA'}</span>${esc(x.nome)}${x.id===io?' (tu)':''}</span>`).join(' ')}</div>`:''}
-    ${t.annullato?'':`<div class="squadra">${t.candidati.length?`<b>Candidati (${t.candidati.length}):</b> ${nomi(t.candidati)}`:'Ancora nessun candidato'}</div>`}
     ${azione?`<div class="az">${azione}</div>`:''}
   </div>`;
 }
 
 // ================= CALENDARIO =================
 const PALETTE=['#EB0089','#1E6FD9','#E07B00','#2E9D5B','#7B3FC4','#00A3A3','#C8333A','#6B6C70'];
-function coloreT(t){ if(t.colore) return t.colore; let h=0; for(const ch of String(t.piscina_id||t.piscina)) h=(h*31+ch.charCodeAt(0))>>>0; return PALETTE[h%PALETTE.length]; }
+function coloreT(t){ if(!t.visibile) return '#818286'; if(t.colore) return t.colore; let h=0; for(const ch of String(t.piscina_id||t.piscina)) h=(h*31+ch.charCodeAt(0))>>>0; return PALETTE[h%PALETTE.length]; }
 function oggiStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function aggiorna(){ if(S.vista==='miei') vistaTurni(); else { vistaCal(); if(S.giorno) apriGiorno(S.giorno,true); } }
 function sovrapposti(t){ if(!t) return []; return S.turni.filter(x=>x.id!==t.id && x.data===t.data && !x.annullato && x.candidati.some(c=>c.id===S.io.id)
@@ -283,7 +318,7 @@ function vistaCal(){
       + '</div></div>';
   }
   h+='</div><button class="btnblocco" onclick="formBlocco()">Candidati a più giorni</button>'
-    +'<p class="intro" style="margin-top:8px;font-size:.88rem">Tocca M, P o G per candidarti (diventa pieno ✓), ritocca per toglierti. Tocca il numero del giorno per vedere orari, candidati e squadra. ★ = sei in squadra.</p>';
+    +'<p class="intro" style="margin-top:8px;font-size:.88rem">Tocca M, P o G per candidarti (diventa pieno ✓), ritocca per toglierti. Tocca il numero del giorno per vedere orari e squadra. ★ = sei in squadra.</p>';
   m.innerHTML=h;
 }
 
@@ -332,19 +367,26 @@ async function inviaBlocco(ev){
   if(!scelti.length){ toast('Nessun turno nuovo con queste scelte.',true); return; }
   const descr={tutti:'tutti i giorni',we:'sabati e domeniche',fer:'dal lunedì al venerdì'}[giorni]+', '+{MPG:'tutti i turni',M:'solo mattina',P:'solo pomeriggio',G:'solo tutto il giorno'}[fasce];
   if(!confirm('Ti candidi a '+scelti.length+' turni di '+f.sede.value+' ('+descr+'). Confermi?')) return;
-  const { data, error } = await sb.rpc('tp_pub_candida_molti', { p_collab:S.io.id, p_turni:scelti.map(t=>t.id) });
+  const { error } = await sb.rpc('tp_pub_candida_molti', { p_collab:S.io.id, p_turni:scelti.flatMap(t=>t.ids) });
   if(error){ toast(error.message||'Non salvato, riprova.',true); return; }
   f.closest('.velo').remove(); await ricarica(); aggiorna();
-  toast('Candidature inviate: '+data+'.');
+  toast('Candidature inviate: '+scelti.length+'.');
 }
 
 async function candida(id,si,veloce){
   const t=S.turni.find(x=>x.id===id);
   if(!si && !veloce && !confirm('Vuoi ritirarti dal turno '+descrTurno(t)+'?')) return;
-  const { data, error } = await sb.rpc('tp_pub_candidatura', { p_collab:S.io.id, p_turno:id, p_si:si });
+  // una "disponibilità" raggruppata vale per tutti i turni nascosti di quella giornata e fascia
+  let data=null, error=null;
+  if(si && t.ids.length>1) ({ error } = await sb.rpc('tp_pub_candida_molti', { p_collab:S.io.id, p_turni:t.ids }));
+  else for(const tid of (si ? t.ids : t.mieiIds)){
+    const r = await sb.rpc('tp_pub_candidatura', { p_collab:S.io.id, p_turno:tid, p_si:si });
+    if(r.error){ error=r.error; break; }
+    if(r.data && r.data.era_in_squadra) data={ era_in_squadra:true };
+  }
   if(error){ toast(error.message||'Non salvato, riprova.',true); await ricarica(); aggiorna(); return; }
   const y=window.scrollY; await ricarica(); aggiorna(); window.scrollTo(0,y);
-  if(si){ const s=sovrapposti(S.turni.find(x=>x.id===id)); if(s.length){ toast('Attenzione: sei candidato anche a '+s.map(x=>x.piscina+' '+hm(x.ora_inizio)+'–'+hm(x.ora_fine)).join(', ')+' alla stessa ora.',true); return; } }
+  if(si){ const s=sovrapposti(S.turni.find(x=>x.id===id||x.ids.includes(t.ids[0]))); if(s.length){ toast('Attenzione: sei candidato anche a '+s.map(x=>x.piscina+' '+hm(x.ora_inizio)+'–'+hm(x.ora_fine)).join(', ')+' alla stessa ora.',true); return; } }
   if(si) toast('Candidatura inviata.');
   else if(data && data.era_in_squadra) avvisoRitiro(t);
   else toast('Candidatura ritirata.');
