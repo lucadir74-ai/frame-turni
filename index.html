@@ -1473,7 +1473,7 @@ function formLinkCalendario(){
   const url=new URL('calendario.html', location.href).href;
   const testo='Ciao! Qui trovi il calendario dei turni: tocca quelli che puoi fare per candidarti e controlla la tua squadra. '+url;
   apriDialog('Link calendario', `
-    <p style="margin:0 0 10px">Lo stesso link per tutti i collaboratori. Al primo accesso scelgono il proprio nome e il telefono se lo ricorda.</p>
+    <p style="margin:0 0 10px">Lo stesso link per tutti i collaboratori. Al primo accesso scrivono i propri dati (chi è già iscritto viene riconosciuto) e il telefono se li ricorda.</p>
     <p class="note" style="word-break:break-all;margin:0 0 12px">${esc(url)}</p>
     <p class="note" style="margin:0 0 12px">Mostra solo date, orari e la propria candidatura: niente elenco dei candidati, contatti, livelli o cifre. Il nome della sede si vede solo per le sedi con “Nome visibile” (es. Christmas World); per le altre i ragazzi vedono solo la giornata e la fascia, e la sede la scopre chi è nella squadra pubblicata.</p>
     <div class="azioni">

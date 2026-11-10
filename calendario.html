@@ -47,8 +47,6 @@ main{max-width:640px;margin:0 auto;padding:16px}
 .tag.S{background:var(--grigio)}
 .giorno.annullato{opacity:.6}
 .annullo{display:inline-block;font-weight:700;font-size:.8rem;color:var(--red);margin-left:6px}
-.chi{display:grid;gap:8px}
-.chi button{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;text-align:left;font-weight:600;font-size:1.05rem}
 .vuoto{background:var(--card);border:1px dashed var(--line);border-radius:12px;padding:26px;text-align:center;color:var(--muted)}
 .iscr{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
 .campo{display:grid;gap:4px;margin-bottom:12px}
@@ -115,7 +113,7 @@ main{max-width:640px;margin:0 auto;padding:16px}
 <div id="toast" role="status"></div>
 <script>
 const CHIAVE_NOME = 'frame_turni_io';
-let sb=null; const S={ staff:[], turni:[], io:null, vista:'cal', sede:null, mese:null, giorno:null };
+let sb=null; const S={ turni:[], io:null, vista:'cal', sede:null, mese:null, giorno:null };
 
 function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function hm(t){ return (t||'').slice(0,5); }
@@ -133,33 +131,39 @@ async function avvio(){
   if(!/^https:\/\/.+\.supabase\.co/.test(window.SUPABASE_URL||'')) return messaggio('Configurazione mancante.');
   sb = supabase.createClient(window.SUPABASE_URL, window.SUPABASE_KEY, { auth:{ persistSession:false } });
   const salvato=leggiIo();
-  if(!await carica(salvato)) return messaggio('Non riesco a caricare il calendario. Riprova tra poco.');
-  S.io = S.staff.find(c=>c.id===salvato) || null;
-  if(!S.io) return sceltaNome();
+  if(!salvato) return formIscrizione();
+  const r = await carica(salvato);
+  if(!r) return messaggio('Non riesco a caricare il calendario. Riprova tra poco.');
+  S.io = r.io;
+  if(!S.io){ scriviIo(null); return formIscrizione(); }
   disegna();
 }
+// Legge i turni per il collaboratore indicato. Il database risponde solo a chi è iscritto e non manda gli id degli altri:
+// ogni nome arriva con io=true/false. (Finché nel database c'è la funzione vecchia, senza parametro, si usa quella.)
+async function carica(id){
+  let r = await sb.rpc('tp_pub_calendario', { p_collab:id });
+  if(r.error) r = await sb.rpc('tp_pub_calendario');
+  if(r.error || !r.data) return null;
+  S.turni = raggruppa((r.data.turni||[]).map(t=>normalizza(t,id)));
+  return { io: r.data.io || (r.data.staff||[]).find(c=>c.id===id) || null };
+}
+const sonoIo = x => x.io===true || (x.id!=null && x.id===S.io.id);
 
-// Legge il calendario. Le sedi "nascoste" (le piscine) non mandano nome né candidati: il ragazzo vede solo la giornata
-// in cui serve disponibilità. Il nome arriva solo a chi è nella squadra pubblicata (deve sapere dove andare).
-// Se lo SQL nuovo non è ancora stato eseguito usa la funzione vecchia e nasconde qui (visibile solo "Christmas").
+// Sedi nascoste (le piscine): niente nome né posti, solo la giornata e la fascia in cui serve disponibilità.
+// Il nome arriva solo a chi è nella squadra pubblicata (deve sapere dove andare). Nessuno vede chi altro si è candidato.
+// Con sql-sedi-nascoste.sql lo fa già il database (campi visibile/mio_cand); prima, la pagina nasconde da sé (visibile solo "Christmas").
 const NOME_NASCOSTO='Disponibilità';
-async function carica(io){
-  let vecchia=false, r=await sb.rpc('tp_pub_calendario_io', { p_collab: io||null });
-  if(r.error && /tp_pub_calendario_io|PGRST202|could not find|does not exist/i.test((r.error.code||'')+' '+(r.error.message||''))){ vecchia=true; r=await sb.rpc('tp_pub_calendario'); }
-  if(r.error) return false;
-  S.staff=r.data.staff||[];
-  S.turni=raggruppa((r.data.turni||[]).map(t=>normalizza(t,vecchia,io)));
-  return true;
-}
-function normalizza(t,vecchia,io){
-  const vis = vecchia ? /christmas/i.test(t.piscina||'') : !!t.visibile;
-  const mioC = vecchia ? (t.candidati||[]).some(x=>x.id===io) : !!t.mio_cand;
+function normalizza(t,id){
+  const nuova = 'visibile' in t;
+  const me = x => x.io===true || (x.id!=null && x.id===id);
+  const vis = nuova ? !!t.visibile : /christmas/i.test(t.piscina||'');
+  const mioC = nuova ? !!t.mio_cand : (t.candidati||[]).some(me);
   const sq = t.pubblicato ? (t.squadra||[]) : [];
-  const ioSq = sq.some(x=>x.id===io);
+  const ioSq = sq.some(me);
   return { ...t, visibile:vis, piscina:(vis||ioSq)?t.piscina:NOME_NASCOSTO, colore:vis?t.colore:null,
-    candidati: mioC?[{id:io}]:[], squadra:(vis||ioSq)?sq:[], ids:[t.id], mieiIds:mioC?[t.id]:[] };
+    candidati: mioC?[{io:true}]:[], squadra:(vis||ioSq)?sq:[], ids:[t.id], mieiIds:mioC?[t.id]:[] };
 }
-// i turni delle sedi nascoste dello stesso giorno e della stessa fascia diventano una sola "disponibilità"
+// i turni nascosti dello stesso giorno e della stessa fascia diventano una sola "disponibilità"
 function raggruppa(lista){
   const out=[], gruppi={};
   for(const t of lista){
@@ -173,21 +177,16 @@ function raggruppa(lista){
       ora_inizio:base.map(t=>hm(t.ora_inizio)).sort()[0], ora_fine:base.map(t=>hm(t.ora_fine)).sort().pop(),
       fotografi:0, stampatori:0, annullato:!validi.length, motivo:validi.length?null:g[0].motivo,
       pubblicato:validi.length>0 && validi.every(t=>t.pubblicato),
-      candidati:g.some(t=>t.candidati.length)?[{id:g.find(t=>t.candidati.length).candidati[0].id}]:[], squadra:[],
+      candidati:g.some(t=>t.candidati.length)?[{io:true}]:[], squadra:[],
       ids:validi.map(t=>t.id), mieiIds:g.flatMap(t=>t.mieiIds) });
   }
   return out.sort((a,b)=>a.data.localeCompare(b.data)||hm(a.ora_inizio).localeCompare(hm(b.ora_inizio)));
 }
 
-function sceltaNome(){
-  document.getElementById('app').innerHTML = `<header><div class="top"><img class="logo" src="logo-bianco.png" alt="Frame About You"><h1>Chi sei?</h1></div><div class="corsia"></div></header>
-  <main><p class="intro">Tocca il tuo nome. Questo telefono se lo ricorderà.</p>
-  <div class="chi">${S.staff.map(c=>`<button onclick="scegli('${c.id}')">${esc(c.nome)}</button>`).join('') || '<div class="vuoto">Ancora nessuno in elenco: iscriviti tu per primo.</div>'}</div>
-  <button class="btnsec" onclick="formIscrizione()">Non sei in elenco? Iscriviti</button></main>`;
-}
 function formIscrizione(){
-  document.getElementById('app').innerHTML = `<header><div class="top"><img class="logo" src="logo-bianco.png" alt="Frame About You"><h1>Iscriviti</h1><button onclick="sceltaNome()">Indietro</button></div><div class="corsia"></div></header>
-  <main><form class="iscr" id="fIscr" onsubmit="inviaIscrizione(event)">
+  document.getElementById('app').innerHTML = `<header><div class="top"><img class="logo" src="logo-bianco.png" alt="Frame About You"><h1>Chi sei?</h1></div><div class="corsia"></div></header>
+  <main><p class="intro">Scrivi i tuoi dati per vedere il calendario. Se ti sei già iscritto, rimetti gli stessi dati di allora: ti riconosciamo e ritrovi i tuoi turni.</p>
+  <form class="iscr" id="fIscr" onsubmit="inviaIscrizione(event)">
     <label class="campo"><span>Nome e cognome</span><input name="nome" autocomplete="name" required maxlength="80"></label>
     <label class="campo"><span>Telefono</span><input name="telefono" type="tel" autocomplete="tel" required></label>
     <label class="campo"><span>Email</span><input name="email" type="email" autocomplete="email" required maxlength="120"></label>
@@ -199,7 +198,7 @@ function formIscrizione(){
       <label><input type="radio" name="auto" value="1" required>Sì</label>
       <label><input type="radio" name="auto" value="0">No</label></div></div>
     <p class="privacy">Telefono ed email li vedono solo gli organizzatori di Frame About You e servono solo a organizzare i turni. Gli altri collaboratori vedono soltanto il tuo nome.</p>
-    <button class="btnpri" type="submit">Iscriviti</button>
+    <button class="btnpri" type="submit">Entra</button>
   </form></main>`;
 }
 async function inviaIscrizione(ev){
@@ -207,16 +206,17 @@ async function inviaIscrizione(ev){
   b.disabled=true; b.textContent='Invio…';
   const { data, error } = await sb.rpc('tp_pub_iscrivi', { p_nome:f.nome.value, p_telefono:f.telefono.value, p_email:f.email.value,
     p_ruolo:f.ruolo.value, p_auto:f.auto.value==='1' });
-  if(error){ b.disabled=false; b.textContent='Iscriviti'; toast(error.message||'Non riesco a iscriverti, riprova.',true); return; }
-  if(!S.staff.some(c=>c.id===data.id)) S.staff.push({ id:data.id, nome:data.nome });
-  toast(data.esistente ? 'Eri già in elenco come '+data.nome+'.' : 'Iscrizione fatta!');
-  await scegli(data.id);
+  if(error){ b.disabled=false; b.textContent='Entra'; toast(error.message||'Non riesco a iscriverti, riprova.',true); return; }
+  S.io={ id:data.id, nome:data.nome };
+  if(!await carica(data.id)){ S.io=null; b.disabled=false; b.textContent='Entra'; toast('Non riesco a caricare il calendario, riprova.',true); return; }
+  scriviIo(data.id);
+  toast(data.esistente ? 'Bentornato, '+data.nome+'.' : 'Iscrizione fatta!');
+  disegna();
 }
 const WA_ORG = '393351755398';   // WhatsApp di Betty per gli avvisi di ritiro
-async function scegli(id){ S.io=S.staff.find(c=>c.id===id); scriviIo(id); await carica(id); S.io=S.staff.find(c=>c.id===id)||S.io; disegna(); }
-function cambiaNome(){ scriviIo(null); S.io=null; sceltaNome(); }
+function cambiaNome(){ if(!confirm('Vuoi uscire? Per rientrare dovrai riscrivere i tuoi dati.')) return; scriviIo(null); S.io=null; formIscrizione(); }
 async function ricarica(){
-  if(!await carica(S.io&&S.io.id)) toast('Non riesco ad aggiornare, riprova.',true);
+  if(!await carica(S.io.id)) toast('Non riesco ad aggiornare, riprova.',true);
 }
 
 function disegna(){
@@ -229,8 +229,8 @@ function disegna(){
 function vai(v){ S.vista=v; disegna(); window.scrollTo(0,0); }
 function filtraSede(v){ S.sede=v; vistaTurni(); }
 
-const mio = t => t.candidati.some(x=>x.id===S.io.id) || t.squadra.some(x=>x.id===S.io.id);
-const inSquadra = t => t.squadra.some(x=>x.id===S.io.id);
+const mio = t => t.candidati.some(sonoIo) || t.squadra.some(sonoIo);
+const inSquadra = t => t.squadra.some(sonoIo);
 function oreAlTurno(t){ const [y,m,g]=t.data.split('-').map(Number); const [h,mi]=hm(t.ora_inizio).split(':').map(Number); return (new Date(y,m-1,g,h,mi)-Date.now())/3600000; }
 function lunedi(d){ const [y,m,g]=d.split('-').map(Number); const x=new Date(y,m-1,g); x.setDate(x.getDate()-((x.getDay()+6)%7)); return x; }
 function titoloSettimana(l){ const e=new Date(l); e.setDate(e.getDate()+6);
@@ -262,7 +262,7 @@ function vistaTurni(){
 }
 
 function scheda(t){
-  const io=S.io.id, cand=t.candidati.some(x=>x.id===io), sq=inSquadra(t);
+  const cand=t.candidati.some(sonoIo), sq=inSquadra(t);
   // libero = entro 48 ore ma solo candidato e la squadra è già pubblicata senza di lui: può togliersi da solo
   const ore=oreAlTurno(t), libero = !sq && t.pubblicato;
   let azione='';
@@ -270,15 +270,16 @@ function scheda(t){
   else if(ore<=0) azione=`<p class="note48">${t.data<oggiStr()?'Turno concluso.':'Turno già iniziato.'}${sq?' Eri in squadra.':''}</p>`;
   else if(!cand && !sq) azione=`<button class="btnpri" onclick="candida('${t.id}',true)">Mi candido</button>`;
   else if(ore>48 || libero) azione=`<div class="stato-io">✓ ${sq?'Sei in squadra':'Ti sei candidato'}</div>`
-    + (S.vista==='miei' ? '<p class="note48">Per ritirarti tocca il turno nel Calendario.</p>' : `<button class="btnsec" style="margin-top:8px" onclick="candida('${t.id}',false)">Ritirati</button>`);
+    + '<p class="note48">Per toglierti ritocca il turno nel Calendario.</p>';
   else azione=`<div class="stato-io">✓ ${sq?'Sei in squadra':'Ti sei candidato'}</div><p class="note48">Mancano meno di 48 ore: per ritirarti avvisa Betty.</p>
     <a class="btnwa" target="_blank" rel="noopener" href="${linkWa('Ciao Betty, sono '+S.io.nome+'. Non riesco a fare il turno '+descrTurno(t)+': puoi togliermi?')}">Scrivi a Betty su WhatsApp</a>`;
+  const nomi = arr => arr.map(x=>`<span class="${sonoIo(x)?'io':''}">${esc(x.nome)}${sonoIo(x)?' (tu)':''}</span>`).join(', ');
   return `<div class="giorno ${t.annullato?'annullato':''} ${sq?'mio':''}">
     <h2>${nomeGiorno(t.data)}</h2>
     <div class="pisc"><b>${esc(t.piscina)}</b> <span class="ore">${hm(t.ora_inizio)}–${hm(t.ora_fine)}</span>${t.annullato?`<span class="annullo">ANNULLATO${t.motivo?' · '+esc(t.motivo):''}</span>`:''}</div>
     ${t.annullato||!t.visibile?'':`<div class="squadra">Servono: ${posti(t)}</div>`}
     ${!t.visibile && !sq && !t.annullato?'<div class="squadra">Serve disponibilità per questa fascia: dove e con chi lo sai quando la squadra è pubblicata.</div>':''}
-    ${t.pubblicato && t.squadra.length?`<div class="squadra"><b>Squadra:</b> ${t.squadra.map(x=>`<span class="${x.id===io?'io':''}"><span class="tag ${x.ruolo}">${x.ruolo==='F'?'FOTO':'STAMPA'}</span>${esc(x.nome)}${x.id===io?' (tu)':''}</span>`).join(' ')}</div>`:''}
+    ${t.pubblicato && t.squadra.length?`<div class="squadra"><b>Squadra:</b> ${t.squadra.map(x=>`<span class="${sonoIo(x)?'io':''}"><span class="tag ${x.ruolo}">${x.ruolo==='F'?'FOTO':'STAMPA'}</span>${esc(x.nome)}${sonoIo(x)?' (tu)':''}</span>`).join(' ')}</div>`:''}
     ${azione?`<div class="az">${azione}</div>`:''}
   </div>`;
 }
@@ -288,7 +289,7 @@ const PALETTE=['#EB0089','#1E6FD9','#E07B00','#2E9D5B','#7B3FC4','#00A3A3','#C83
 function coloreT(t){ if(!t.visibile) return '#818286'; if(t.colore) return t.colore; let h=0; for(const ch of String(t.piscina_id||t.piscina)) h=(h*31+ch.charCodeAt(0))>>>0; return PALETTE[h%PALETTE.length]; }
 function oggiStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function aggiorna(){ if(S.vista==='miei') vistaTurni(); else { vistaCal(); if(S.giorno) apriGiorno(S.giorno,true); } }
-function sovrapposti(t){ if(!t) return []; return S.turni.filter(x=>x.id!==t.id && x.data===t.data && !x.annullato && x.candidati.some(c=>c.id===S.io.id)
+function sovrapposti(t){ if(!t) return []; return S.turni.filter(x=>x.id!==t.id && x.data===t.data && !x.annullato && x.candidati.some(sonoIo)
   && hm(x.ora_inizio)<hm(t.ora_fine) && hm(t.ora_inizio)<hm(x.ora_fine)); }
 function mesiConTurni(){ return [...new Set(S.turni.map(t=>t.data.slice(0,7)))].sort(); }
 function cambiaMeseCal(n){ const [y,m]=S.mese.split('-').map(Number); const d=new Date(y,m-1+n,1); S.mese=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); vistaCal(); }
@@ -327,8 +328,8 @@ async function tocco(id){
   if(t.annullato){ toast('Turno annullato'+(t.motivo?' ('+t.motivo+')':'')+'.'); return; }
   if(oreAlTurno(t)<=0){ toast(t.data<oggiStr()?'Turno concluso.':'Turno già iniziato.'); return; }
   if(!mio(t)) return candida(id,true);
-  if((oreAlTurno(t)<=48 && !(t.pubblicato && !inSquadra(t))) || inSquadra(t)) return apriGiorno(t.data);   // ritiro con avviso: si passa dal dettaglio
-  return candida(id,false,true);
+  if(oreAlTurno(t)<=48 && !(t.pubblicato && !inSquadra(t))) return apriGiorno(t.data);   // meno di 48 ore: nel dettaglio c'è il messaggio per Betty
+  return candida(id,false,!inSquadra(t));   // chi è già in squadra conferma prima di togliersi, poi avvisa Betty
 }
 
 function apriGiorno(d,riapri){
@@ -386,7 +387,7 @@ async function candida(id,si,veloce){
   }
   if(error){ toast(error.message||'Non salvato, riprova.',true); await ricarica(); aggiorna(); return; }
   const y=window.scrollY; await ricarica(); aggiorna(); window.scrollTo(0,y);
-  if(si){ const s=sovrapposti(S.turni.find(x=>x.id===id||x.ids.includes(t.ids[0]))); if(s.length){ toast('Attenzione: sei candidato anche a '+s.map(x=>x.piscina+' '+hm(x.ora_inizio)+'–'+hm(x.ora_fine)).join(', ')+' alla stessa ora.',true); return; } }
+  if(si){ const s=sovrapposti(S.turni.find(x=>x.id===id)); if(s.length){ toast('Attenzione: sei candidato anche a '+s.map(x=>x.piscina+' '+hm(x.ora_inizio)+'–'+hm(x.ora_fine)).join(', ')+' alla stessa ora.',true); return; } }
   if(si) toast('Candidatura inviata.');
   else if(data && data.era_in_squadra) avvisoRitiro(t);
   else toast('Candidatura ritirata.');
