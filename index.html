@@ -101,6 +101,7 @@ main{max-width:1100px;margin:0 auto;padding:16px}
 .calo .gg.off{background:#F8F8F9;cursor:default}
 .calo .gg.off:hover{border-color:var(--line)}
 .calo .gg.oggi{border-color:var(--ink)}
+.calo .gg.inc,.calo .gg.inc:hover{border:2px solid var(--red);padding:3px 4px}
 .calo .num{font:700 .85rem var(--fc)}
 .calo .gg.off .num{color:#B5B6B9}
 .calo .cr{display:flex;gap:5px;align-items:baseline;font-size:.78rem;border-left:4px solid var(--c);background:#FAFAFB;border-radius:4px;padding:2px 5px;white-space:nowrap;overflow:hidden}
@@ -1604,7 +1605,8 @@ function calendarioCand(turni){
   for(let g=1; g<=ult; g++){
     const d=S.mese+'-'+String(g).padStart(2,'0');
     const tg=turni.filter(t=>t.data===d).sort((a,b)=>(piscinaById(a.piscina_id)?.nome||'').localeCompare(piscinaById(b.piscina_id)?.nome||'')||hm(a.ora_inizio).localeCompare(hm(b.ora_inizio)));
-    h+=`<div class="gg ${tg.length?'':'off'} ${d===o?'oggi':''}" ${tg.length?`onclick="giornoCand('${d}')" role="button" tabindex="0"`:''}><div class="num">${g}</div>`
+    const inc=tg.some(t=>!t.annullato && S.cand.filter(x=>x.turno_id===t.id).length < (t.fotografi||0)+(t.stampatori||0));
+    h+=`<div class="gg ${tg.length?'':'off'} ${d===o?'oggi':''} ${inc?'inc':''}" ${tg.length?`onclick="giornoCand('${d}')" role="button" tabindex="0"`:''}><div class="num">${g}</div>`
       + tg.map(t=>{
           const p=piscinaById(t.piscina_id)||{nome:'?'}; const k=S.cand.filter(x=>x.turno_id===t.id); const posti=(t.fotografi||0)+(t.stampatori||0);
           const nomi=k.map(x=>{ const sq=S.ass.some(a=>a.turno_id===t.id&&a.collaboratore_id===x.collaboratore_id); return (sq?'★':'')+esc(nomeC(x.collaboratore_id).split(' ')[0]); });
@@ -1614,7 +1616,7 @@ function calendarioCand(turni){
             <span class="nm">${nomi.slice(0,3).join(', ')}${nomi.length>3?' +'+(nomi.length-3):''}</span></div>`;
         }).join('') + '</div>';
   }
-  return h+'</div><p class="note">Clic su un giorno per vedere e gestire i candidati. M = mattina, P = pomeriggio, G = tutto il giorno. Conteggio verde = candidati sufficienti per i posti, arancione = ne mancano. ★ davanti a un nome = in squadra.</p>';
+  return h+'</div><p class="note">Clic su un giorno per vedere e gestire i candidati. M = mattina, P = pomeriggio, G = tutto il giorno. Conteggio verde = candidati sufficienti per i posti, arancione = ne mancano. Bordo rosso = giornata con almeno un turno ancora scoperto. ★ davanti a un nome = in squadra.</p>';
 }
 function giornoCand(d){
   apriDialog(nomeGiorno(d).replace(/^./,c=>c.toUpperCase()), `<div id="gc" data-d="${d}"></div>`);
