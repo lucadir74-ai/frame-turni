@@ -609,6 +609,7 @@ function cardEvento(e, turni){
     <div class="azioni"><button class="btn pic ${aperto?'':'pri'}" onclick="apriEvento('${key}',${!aperto})">${aperto?'Nascondi turni':'Mostra turni'}</button>
       ${e && validi.length>pubb?`<button class="btn pic pri" onclick="pubblicaEvento('${e.id}')">Pubblica squadre (${validi.length-pubb})</button>`:''}
       ${e && pubb?`<button class="btn pic" onclick="ritiraEvento('${e.id}')">Ritira squadre (${pubb})</button>`:''}
+      ${e?`<button class="btn pic ${e.mostra_colleghi?'pri':''}" aria-pressed="${!!e.mostra_colleghi}" title="Se acceso, chi è in squadra vede chi lavora con lui quel giorno" onclick="colleghiEvento('${e.id}')">Colleghi visibili: ${e.mostra_colleghi?'sì':'no'}</button>`:''}
       ${e?`<button class="btn pic" onclick="apriCalEvento('${e.id}')">Calendario posti</button><button class="btn pic" onclick="formEvento('${e.id}')">Modifica evento</button><details class="menu"><summary class="btn pic" aria-label="Altre azioni">⋯</summary><div class="menu-b"><button class="btn pic del" onclick="eliminaEvento('${e.id}')">Elimina evento</button></div></details>`:''}</div>`;
   if(aperto && turni.length) h+='<div class="ev-giorni">'+[...new Set(turni.map(t=>t.data))].map(g=>{
     const [y,m,d]=g.split('-').map(Number), giorno=new Date(y,m-1,d).toLocaleDateString('it-IT',{weekday:'short',day:'numeric',month:'short'});
@@ -1228,6 +1229,18 @@ async function pubblicaEvento(id){
   if(errore((await sb.from('tp_turni').update({pubblicato:true}).eq('evento_id',id).eq('pubblicato',false).eq('annullato',false)).error)) return;
   toast('Squadre dell\'evento pubblicate.'); ricarica();
 }
+// interruttore dell'evento: se acceso, nel calendario chi è in squadra vede chi lavora con lui quel giorno; se spento vede solo i propri turni
+async function colleghiEvento(id){
+  const e=(S.eventi||[]).find(x=>x.id===id); if(!e) return;
+  const val=!e.mostra_colleghi;
+  if(!confirm(val
+    ? 'Accendere “Colleghi visibili” per “'+e.nome+'”?\n\nNel calendario, chi è in una squadra pubblicata vedrà i nomi di chi è in turno con lui in quella giornata.'
+    : 'Spegnere “Colleghi visibili” per “'+e.nome+'”?\n\nNel calendario ognuno vedrà solo i propri turni, senza i nomi degli altri.')) return;
+  const r=await sb.from('tp_eventi').update({mostra_colleghi:val}).eq('id',id);
+  if(r.error && /mostra_colleghi/i.test(r.error.message||'')){ toast('Prima va eseguito sql-colleghi-visibili.sql nel database.',true); return; }
+  if(errore(r.error)) return;
+  toast(val?'Colleghi visibili: i ragazzi in squadra vedono chi lavora con loro.':'Colleghi nascosti: ognuno vede solo i propri turni.'); ricarica();
+}
 // rimette in bozza tutte le squadre dell'evento (anche dei mesi non visualizzati): le assegnazioni restano
 async function ritiraEvento(id){
   const e=(S.eventi||[]).find(x=>x.id===id); if(!e) return;
@@ -1476,7 +1489,7 @@ function formLinkCalendario(){
   apriDialog('Link calendario', `
     <p style="margin:0 0 10px">Lo stesso link per tutti i collaboratori. Al primo accesso scrivono i propri dati (chi è già iscritto viene riconosciuto) e il telefono se li ricorda.</p>
     <p class="note" style="word-break:break-all;margin:0 0 12px">${esc(url)}</p>
-    <p class="note" style="margin:0 0 12px">Mostra solo date, orari e la propria candidatura: niente elenco dei candidati, contatti, livelli o cifre. Il nome della sede si vede solo per le sedi con “Nome visibile” (es. Christmas World); per le altre i ragazzi vedono solo la giornata e la fascia, e la sede la scopre chi è nella squadra pubblicata.</p>
+    <p class="note" style="margin:0 0 12px">Mostra solo date, orari e la propria candidatura: niente elenco dei candidati, contatti, livelli o cifre. Il nome della sede si vede solo per le sedi con “Nome visibile” (es. Christmas World); per le altre i ragazzi vedono solo la giornata e la fascia, e la sede la scopre chi è nella squadra pubblicata. I nomi dei colleghi in turno si vedono solo negli eventi con “Colleghi visibili: sì”; altrimenti ognuno vede solo i propri turni.</p>
     <div class="azioni">
       <button type="button" class="btn pic" onclick="copia('${url}')">Copia link</button>
       <a class="btn pic pri" style="text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(testo)}">Manda su WhatsApp</a>

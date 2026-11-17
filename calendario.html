@@ -160,8 +160,10 @@ function normalizza(t,id){
   const mioC = nuova ? !!t.mio_cand : (t.candidati||[]).some(me);
   const sq = t.pubblicato ? (t.squadra||[]) : [];
   const ioSq = sq.some(me);
-  return { ...t, visibile:vis, piscina:(vis||ioSq)?t.piscina:NOME_NASCOSTO, colore:vis?t.colore:null,
-    candidati: mioC?[{io:true}]:[], squadra:(vis||ioSq)?sq:[], ids:[t.id], mieiIds:mioC?[t.id]:[] };
+  // con "colleghi visibili" il database manda nome e squadra anche dei turni dell'evento in cui lavorano gli altri quel giorno
+  const vedo = vis || ioSq || (nuova && t.piscina!=null);
+  return { ...t, visibile:vis, piscina:vedo?t.piscina:NOME_NASCOSTO, colore:vis?t.colore:null,
+    candidati: mioC?[{io:true}]:[], squadra:vedo?sq:[], ids:[t.id], mieiIds:mioC?[t.id]:[] };
 }
 // i turni nascosti dello stesso giorno e della stessa fascia diventano una sola "disponibilità"
 function raggruppa(lista){
@@ -279,7 +281,7 @@ function scheda(t){
     <div class="pisc"><b>${esc(t.piscina)}</b> <span class="ore">${hm(t.ora_inizio)}–${hm(t.ora_fine)}</span>${t.annullato?`<span class="annullo">ANNULLATO${t.motivo?' · '+esc(t.motivo):''}</span>`:''}</div>
     ${t.annullato||!t.visibile?'':`<div class="squadra">Servono: ${posti(t)}</div>`}
     ${!t.visibile && !sq && !t.annullato?'<div class="squadra">Serve disponibilità per questa fascia: dove e con chi lo sai quando la squadra è pubblicata.</div>':''}
-    ${t.pubblicato && t.squadra.length?`<div class="squadra"><b>Squadra:</b> ${t.squadra.map(x=>`<span class="${sonoIo(x)?'io':''}"><span class="tag ${x.ruolo}">${x.ruolo==='F'?'FOTO':'STAMPA'}</span>${esc(x.nome)}${sonoIo(x)?' (tu)':''}</span>`).join(' ')}</div>`:''}
+    ${t.pubblicato && t.squadra.length?`<div class="squadra"><b>${t.colleghi===false?'Il tuo ruolo':sq?'Squadra':'In turno'}:</b> ${t.squadra.map(x=>`<span class="${sonoIo(x)?'io':''}"><span class="tag ${x.ruolo}">${x.ruolo==='F'?'FOTO':'STAMPA'}</span>${esc(x.nome)}${sonoIo(x)?' (tu)':''}</span>`).join(' ')}</div>`:''}
     ${azione?`<div class="az">${azione}</div>`:''}
   </div>`;
 }
