@@ -1,5 +1,6 @@
 -- Frame Turni · calendario dei ragazzi riservato e con sedi nascoste
 -- Da incollare UNA volta nel SQL editor di Supabase. Si può rieseguire senza danni.
+-- ATTENZIONE: dopo questo file esegui anche sql-colleghi-visibili.sql (aggiorna la stessa funzione con l'interruttore "Colleghi visibili").
 -- Comprende anche sql-calendario-privato.sql: basta eseguire questo (anche se l'altro è già stato eseguito).
 --
 -- La funzione tp_pub_calendario(p_collab):
