@@ -9,6 +9,14 @@
 --    (la squadra di tutti i turni pubblicati dell'evento in quel giorno, mattina e pomeriggio).
 -- Chi non è in squadra quel giorno non vede i nomi di nessuno.
 
+-- 0. quello che serve di sql-sedi-nascoste.sql (se non era mai stato eseguito): "nome visibile" sulle sedi,
+--    Christmas resta riconoscibile, via le versioni vecchie della funzione
+alter table public.tp_piscine
+  add column if not exists nome_visibile boolean not null default false;
+update public.tp_piscine set nome_visibile = true where nome ilike '%christmas%' and not nome_visibile;
+drop function if exists public.tp_pub_calendario();
+drop function if exists public.tp_pub_calendario_io(text);
+
 -- 1. l'interruttore sull'evento
 alter table public.tp_eventi
   add column if not exists mostra_colleghi boolean not null default false;
