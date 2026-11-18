@@ -1700,9 +1700,7 @@ async function togliSquadraGC(aid){
   await dopoGC();
 }
 async function ritiraCandGC(cid,tid){
-  const c=collabById(cid);
-  if(!confirm('Togliere la candidatura di '+(c?c.nome:'questa persona')+' a questo turno?')) return;
-  await toggleCand(cid,tid);
+  await toggleCand(cid,tid);   // le due conferme sono dentro toggleCand
 }
 async function pubblicaGC(tid,val){
   if(!val && !confirm('Ritirare la pubblicazione? I collaboratori non vedranno più questa squadra. Le assegnazioni restano.')) return;
@@ -1710,8 +1708,18 @@ async function pubblicaGC(tid,val){
   toast(val?'Squadra pubblicata.':'Pubblicazione ritirata.');
   await dopoGC();
 }
+// togliere una candidatura chiede due conferme (dalla griglia e dalla finestra del giorno): è facile toccare per sbaglio
+function confermaTogliCand(cid,tid){
+  const p=collabById(cid), t=S.turni.find(x=>x.id===tid), sede=t&&piscinaById(t.piscina_id);
+  const chi=p?p.nome:'questa persona';
+  const turno=t?(sede?sede.nome+', ':'')+nomeGiorno(t.data)+', '+hm(t.ora_inizio)+'–'+hm(t.ora_fine):'questo turno';
+  const inSq=S.ass.some(a=>a.turno_id===tid&&a.collaboratore_id===cid);
+  if(!confirm('Togliere la candidatura di '+chi+'?\n\n'+turno+(inSq?'\n\nAttenzione: è anche in squadra. L\'assegnazione resta: per toglierla usa “Togli dalla squadra”.':''))) return false;
+  return confirm('Confermi di nuovo? La candidatura di '+chi+' verrà cancellata.');
+}
 async function toggleCand(cid,tid){
   const c=S.cand.find(x=>x.collaboratore_id===cid&&x.turno_id===tid);
+  if(c && !confermaTogliCand(cid,tid)) return;
   const r = c ? await sb.from('tp_candidature').delete().eq('id',c.id)
               : await sb.from('tp_candidature').insert({collaboratore_id:cid,turno_id:tid}).select().single();
   if(errore(r.error)) return;
