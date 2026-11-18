@@ -37,6 +37,8 @@ main{max-width:640px;margin:0 auto;padding:16px}
 .pisc{font-size:.92rem;margin:2px 0}
 .pisc b{font-weight:600}
 .pisc .ore{color:var(--muted);font-variant-numeric:tabular-nums}
+.indir{font-size:.9rem;margin:2px 0}
+.indir a{color:inherit}
 .fasce{display:flex;gap:8px;margin-top:10px}
 .fasce button{flex:1;border:2px solid var(--line);background:#fff;border-radius:10px;padding:10px 6px;font-weight:600;color:var(--muted)}
 .fasce button.si{border-color:var(--ok);background:#E7F3EC;color:var(--ok)}
@@ -168,6 +170,11 @@ function normalizza(t,id){
 // i turni nascosti dello stesso giorno e della stessa fascia diventano una sola "disponibilità"
 function raggruppa(lista){
   const out=[], gruppi={};
+  // piscine: a squadra pubblicata chi non è in squadra non vede più quella disponibilità,
+  // e chi è già in squadra da un'altra parte alla stessa ora non vede le disponibilità rimaste aperte
+  const mieiSq=lista.filter(t=>t.pubblicato && !t.annullato && t.squadra.some(sonoIo));
+  const occupato=t=>mieiSq.some(x=>x.id!==t.id && x.data===t.data && hm(x.ora_inizio)<hm(t.ora_fine) && hm(t.ora_inizio)<hm(x.ora_fine));
+  lista=lista.filter(t=>t.piscina!==NOME_NASCOSTO || (!t.pubblicato && !occupato(t)));
   for(const t of lista){
     if(t.piscina!==NOME_NASCOSTO){ out.push(t); continue; }
     const k=t.data+'_'+fasciaDi(t); (gruppi[k]=gruppi[k]||[]).push(t);
@@ -279,6 +286,7 @@ function scheda(t){
   return `<div class="giorno ${t.annullato?'annullato':''} ${sq?'mio':''}">
     <h2>${nomeGiorno(t.data)}</h2>
     <div class="pisc"><b>${esc(t.piscina)}</b> <span class="ore">${hm(t.ora_inizio)}–${hm(t.ora_fine)}</span>${t.annullato?`<span class="annullo">ANNULLATO${t.motivo?' · '+esc(t.motivo):''}</span>`:''}</div>
+    ${t.indirizzo && sq?`<div class="indir">📍 <a target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(t.indirizzo)}">${esc(t.indirizzo)}</a></div>`:''}
     ${t.annullato||!t.visibile?'':`<div class="squadra">Servono: ${posti(t)}</div>`}
     ${!t.visibile && !sq && !t.annullato?'<div class="squadra">Serve disponibilità per questa fascia: dove e con chi lo sai quando la squadra è pubblicata.</div>':''}
     ${t.pubblicato && t.squadra.length?`<div class="squadra"><b>${t.colleghi===false?'Il tuo ruolo':sq?'Squadra':'In turno'}:</b> ${t.squadra.map(x=>`<span class="${sonoIo(x)?'io':''}"><span class="tag ${x.ruolo}">${x.ruolo==='F'?'FOTO':'STAMPA'}</span>${esc(x.nome)}${sonoIo(x)?' (tu)':''}</span>`).join(' ')}</div>`:''}

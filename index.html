@@ -117,6 +117,7 @@ main{max-width:1100px;margin:0 auto;padding:16px}
 .gcl{margin:8px 0}
 .gcr{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:6px 8px;padding:7px 8px;border-bottom:1px solid var(--line);border-radius:8px}
 .gcr.sq{background:#F1F8F3;margin:2px 0}
+.gcr.fuori{opacity:.5}
 .gcr .stella{color:var(--water)}
 .gcn{flex:1 1 200px;min-width:0}
 .gcb{display:flex;flex-wrap:wrap;gap:6px}
@@ -731,8 +732,8 @@ function formTurno(id){
     <p class="note" style="margin:-4px 0 12px">Con “Fino al” si creano i turni per ogni giorno, dal primo all’ultimo compresi. I giorni di chiusura poi si eliminano uno per uno.</p>`}
     ${orari}
     <div class="due">
-      <label class="campo"><span>Fotografi richiesti</span><input type="number" min="0" max="9" name="fotografi" value="${t?t.fotografi:2}" required></label>
-      <label class="campo"><span>Stampatori richiesti</span><input type="number" min="1" max="9" name="stampatori" value="${t?t.stampatori:2}" required></label>
+      <label class="campo"><span>Fotografi richiesti</span><input type="number" min="0" max="30" name="fotografi" value="${t?t.fotografi:2}" required></label>
+      <label class="campo"><span>Stampatori richiesti</span><input type="number" min="1" max="30" name="stampatori" value="${t?t.stampatori:2}" required></label>
     </div>
     ${t?'':'<p class="note" style="margin:-4px 0 12px">Sono i posti di ogni turno (di solito 2 foto + 2 stampa). Poi, nel “Calendario posti” dell\'evento, si chiudono i posti che non servono nei singoli giorni.</p>'}
     <label class="campo"><span>Note</span><textarea name="note" rows="2">${esc(t?.note)}</textarea></label>`,
@@ -770,10 +771,11 @@ function formTurno(id){
       ...recFasce(f.modo.value, nf), fotografi:base.fotografi, stampatori:base.stampatori, note:base.note };
     const ev=await salvaEventoDb(evRec);
     if(errore(ev.error)) return false;
-    const ins=await sb.from('tp_turni').insert(nuovi.map(r=>({...r, evento_id:ev.data.id})));
+    const ins=await sb.from('tp_turni').insert(nuovi.map(r=>({...r, evento_id:ev.data.id}))).select();
     if(ins.error){ await sb.from('tp_eventi').delete().eq('id',ev.data.id); errore(ins.error); return false; }
+    const np=await passaDisponibilita(ins.data);
     if(primo.slice(0,7)!==S.mese) S.mese=primo.slice(0,7);
-    toast('Evento creato: '+nuovi.length+(nuovi.length===1?' turno.':' turni.')); await ricarica();
+    toast('Evento creato: '+nuovi.length+(nuovi.length===1?' turno.':' turni.')+testoPassate(np)); await ricarica();
   }, t?'Salva':'Crea evento');
 }
 
@@ -798,8 +800,8 @@ function formModificaBlocco(){
       <label class="campo"><span>Nuova fine</span>${selOra('fin','',{vuoto:true})}</label>
     </div>
     <div class="due" data-az="posti" style="display:none">
-      <label class="campo"><span>Fotografi richiesti</span><input type="number" min="0" max="9" name="fot" value="1"></label>
-      <label class="campo"><span>Stampatori richiesti</span><input type="number" min="1" max="9" name="sta" value="1"></label>
+      <label class="campo"><span>Fotografi richiesti</span><input type="number" min="0" max="30" name="fot" value="1"></label>
+      <label class="campo"><span>Stampatori richiesti</span><input type="number" min="1" max="30" name="sta" value="1"></label>
     </div>
     <p class="note" data-az="posti" style="display:none">Per chiudere posti su giorni sparsi è più comodo il “Calendario posti” dell'evento.</p>
     <p class="note" data-az="elimina" style="display:none">Si cancellano anche candidature, assegnazioni, incassi e spese di quei turni. Per una giornata di pioggia usa invece “Annulla turno”.</p>`,
@@ -850,6 +852,52 @@ async function contaLegati(ids){
 }
 async function aBlocchi(ids, fn){ for(let i=0;i<ids.length;i+=100){ if(errore((await fn(ids.slice(i,i+100))).error)) return false; } return true; }
 
+// ---------- DISPONIBILITÀ CHE PASSANO ALLE PISCINE NUOVE ----------
+// Solo per le sedi nascoste (le piscine). I ragazzi danno la disponibilità per giorno e fascia, non per piscina:
+// chi l'ha già data diventa candidato da solo anche nei turni nuovi delle altre piscine di quel giorno.
+// Mattina nuova ← mattina o tutto il giorno · pomeriggio nuovo ← pomeriggio o tutto il giorno ·
+// tutto il giorno nuovo ← tutto il giorno, oppure mattina e pomeriggio insieme. Le sedi con nome visibile (Christmas) non sono toccate.
+function sedeNascosta(id){ const p=piscinaById(id); if(!p) return false; return ('nome_visibile' in p) ? !p.nome_visibile : !/christmas/i.test(p.nome||''); }
+function giaInSquadraAltrove(cid,t){   // la persona è in squadra in un altro turno dello stesso giorno, a orari sovrapposti
+  return S.ass.filter(a=>a.collaboratore_id===cid && a.turno_id!==t.id).map(a=>S.turni.find(x=>x.id===a.turno_id))
+    .find(x=>x && !x.annullato && x.data===t.data && hm(x.ora_inizio)<hm(t.ora_fine) && hm(t.ora_inizio)<hm(x.ora_fine));
+}
+// nuovi = turni appena creati (con id). extra = {turno_id:[collaboratore_id,…]} da copiare comunque (es. pomeriggio di un giorno diviso).
+// Restituisce quante candidature ha aggiunto. Non blocca mai il salvataggio: se qualcosa va storto, avvisa e basta.
+async function passaDisponibilita(nuovi, extra){
+  try{
+    const target=(nuovi||[]).filter(t=>t && t.id && !t.annullato && sedeNascosta(t.piscina_id));
+    if(!target.length) return 0;
+    const idNuovi=new Set(target.map(t=>t.id)), date=[...new Set(target.map(t=>t.data))];
+    const r=await sb.from('tp_turni').select('id,data,ora_inizio,ora_fine,piscina_id,annullato').in('data',date);
+    if(r.error) throw r.error;
+    const fonti=(r.data||[]).filter(t=>!idNuovi.has(t.id) && !t.annullato && sedeNascosta(t.piscina_id));
+    const cand=[];
+    for(let i=0;i<fonti.length;i+=100){
+      const k=await sb.from('tp_candidature').select('turno_id,collaboratore_id').in('turno_id',fonti.slice(i,i+100).map(t=>t.id));
+      if(k.error) throw k.error; cand.push(...k.data);
+    }
+    // per ogni giorno: chi è disponibile la mattina (M), il pomeriggio (P), tutto il giorno (G)
+    const disp={};
+    for(const k of cand){ const t=fonti.find(x=>x.id===k.turno_id); if(!t) continue;
+      const g=disp[t.data]=disp[t.data]||{M:new Set(),P:new Set(),G:new Set()}; g[fasciaDi(t)].add(k.collaboratore_id); }
+    const attivo=id=>{ const c=collabById(id); return !c || c.attivo!==false; };
+    const righe=[];
+    for(const t of target){
+      const g=disp[t.data]||{M:new Set(),P:new Set(),G:new Set()}, f=fasciaDi(t);
+      const chi = f==='M' ? [...g.M,...g.G] : f==='P' ? [...g.P,...g.G] : [...g.G,...[...g.M].filter(x=>g.P.has(x))];
+      for(const cid of new Set([...chi, ...((extra&&extra[t.id])||[])])) if(attivo(cid)) righe.push({turno_id:t.id, collaboratore_id:cid});
+    }
+    for(let i=0;i<righe.length;i+=200){ const ins=await sb.from('tp_candidature').insert(righe.slice(i,i+200)); if(ins.error) throw ins.error; }
+    return righe.length;
+  }catch(err){
+    console.error(err);
+    toast('Turni salvati, ma non sono riuscito a riportare le disponibilità già date dai ragazzi. Controlla i candidati.',true);
+    return 0;
+  }
+}
+function testoPassate(n){ return n ? ' Riportate '+n+(n===1?' disponibilità già data':' disponibilità già date')+' dai ragazzi.' : ''; }
+
 function formEvento(id){
   const e=S.eventi.find(x=>x.id===id); if(!e) return;
   const opz=S.piscine.map(p=>`<option value="${p.id}" ${p.id===e.piscina_id?'selected':''}>${esc(p.nome)}</option>`).join('');
@@ -861,8 +909,8 @@ function formEvento(id){
       <label class="campo"><span>Ultimo giorno</span><input type="date" name="d2" value="${e.data_fine}" required></label></div>
     ${campiModalita(modoEvento(e), fasceEvento(e))}
     <div class="due">
-      <label class="campo"><span>Fotografi richiesti</span><input type="number" min="0" max="9" name="fotografi" value="${e.fotografi}"></label>
-      <label class="campo"><span>Stampatori richiesti</span><input type="number" min="1" max="9" name="stampatori" value="${e.stampatori}"></label></div>
+      <label class="campo"><span>Fotografi richiesti</span><input type="number" min="0" max="30" name="fotografi" value="${e.fotografi}"></label>
+      <label class="campo"><span>Stampatori richiesti</span><input type="number" min="1" max="30" name="stampatori" value="${e.stampatori}"></label></div>
     <label class="campo"><span>Note</span><textarea name="note" rows="2">${esc(e.note||'')}</textarea></label>
     <p class="note">Le modifiche valgono per tutti i giorni dell'evento. I giorni che avete cambiato a mano (orari, posti chiusi, mezza giornata o tutto il giorno) restano come sono. Allungando il periodo si aggiungono i giorni nuovi; accorciandolo si eliminano quelli fuori, con candidature e squadre.</p>`,
   async f=>{
@@ -935,11 +983,12 @@ function formEvento(id){
     if(aggF.length && !await aBlocchi(aggF, p=>sb.from('tp_turni').update({fotografi:nfot}).in('id',p))) return false;
     if(aggS.length && !await aBlocchi(aggS, p=>sb.from('tp_turni').update({stampatori:nsta}).in('id',p))) return false;
     if(sede!==e.piscina_id && !await aBlocchi(restano.map(t=>t.id), p=>sb.from('tp_turni').update({piscina_id:sede}).in('id',p))) return false;
-    if(nuovi.length && errore((await sb.from('tp_turni').insert(nuovi)).error)) return false;
+    let np=0;
+    if(nuovi.length){ const ins=await sb.from('tp_turni').insert(nuovi).select(); if(errore(ins.error)) return false; np=await passaDisponibilita(ins.data); }
     const rec={ nome:f.nome.value.trim()||null, piscina_id:sede, data_inizio:d1, data_fine:d2,
       ...recFasce(nuovoModo, nf), fotografi:nfot, stampatori:nsta, note:f.note.value.trim()||null };
     if(errore((await salvaEventoDb(rec, id)).error)) return false;
-    toast('Evento aggiornato.'); await ricarica();
+    toast('Evento aggiornato.'+testoPassate(np)); await ricarica();
   }, 'Salva evento');
 }
 
@@ -1147,7 +1196,7 @@ async function ecPosto(tid,r,delta){
   if(errore((await sb.from('tp_turni').update({[campo]:nuovo}).eq('id',tid)).error)){ t[campo]=prima; renderEC(); return; }
   await dopoEC(delta<0?'Posto chiuso.':'Posto riaperto.');
 }
-const MAX_POSTI=6;
+const MAX_POSTI=30;
 function selNum(name,min,max,val){ let s=`<select name="${name}">`; for(let i=min;i<=max;i++) s+=`<option ${i===val?'selected':''}>${i}</option>`; return s+'</select>'; }
 // avviso se i nuovi posti sono meno delle persone già in squadra (nessuno viene tolto)
 function avvisoCoperti(lista){
@@ -1189,12 +1238,18 @@ async function ecDividi(tid){
   const nf=leggiFasce('mp',{M:[ecVal('dmi'),ecVal('dmf')], P:[ecVal('dpi'),ecVal('dpf')]});
   if(typeof nf==='string'){ toast(nf,true); return; }
   if(!nf.M||!nf.P){ toast('Servono sia la mattina sia il pomeriggio.',true); return; }
-  const nc=E.cand.filter(x=>x.turno_id===tid).length, na=E.ass.filter(x=>x.turno_id===tid).length;
-  if(!confirm('Divido il '+nomeGiorno(t.data)+' in mattina '+nf.M.join('–')+' e pomeriggio '+nf.P.join('–')+', con gli stessi posti.'+(nc||na?'\n\nCandidati ('+nc+') e squadra ('+na+') restano sulla mattina: per il pomeriggio dovranno candidarsi di nuovo.':'')+'\n\nProcedo?')) return;
+  const candT=E.cand.filter(x=>x.turno_id===tid), nc=candT.length, na=E.ass.filter(x=>x.turno_id===tid).length;
+  // piscine (sedi nascoste): chi era disponibile tutto il giorno resta candidato anche il pomeriggio; la squadra resta sulla mattina
+  const nasc=sedeNascosta(t.piscina_id), eraG=fasciaDi(t)==='G';
+  const avviso = !(nc||na) ? '' : nasc
+    ? '\n\nLa squadra ('+na+') resta sulla mattina.'+(nc?(eraG?' I candidati ('+nc+') restano candidati sia la mattina sia il pomeriggio.':' I candidati ('+nc+') restano sulla mattina.'):'')
+    : '\n\nCandidati ('+nc+') e squadra ('+na+') restano sulla mattina: per il pomeriggio dovranno candidarsi di nuovo.';
+  if(!confirm('Divido il '+nomeGiorno(t.data)+' in mattina '+nf.M.join('–')+' e pomeriggio '+nf.P.join('–')+', con gli stessi posti.'+avviso+'\n\nProcedo?')) return;
   if(errore((await sb.from('tp_turni').update({ora_inizio:nf.M[0], ora_fine:nf.M[1]}).eq('id',tid)).error)) return;
-  const ins=await sb.from('tp_turni').insert({piscina_id:t.piscina_id, evento_id:t.evento_id, data:t.data, ora_inizio:nf.P[0], ora_fine:nf.P[1], fotografi:t.fotografi, stampatori:t.stampatori, note:t.note||null});
+  const ins=await sb.from('tp_turni').insert({piscina_id:t.piscina_id, evento_id:t.evento_id, data:t.data, ora_inizio:nf.P[0], ora_fine:nf.P[1], fotografi:t.fotografi, stampatori:t.stampatori, note:t.note||null}).select().single();
   if(ins.error){ await sb.from('tp_turni').update({ora_inizio:t.ora_inizio, ora_fine:t.ora_fine}).eq('id',tid); errore(ins.error); await dopoEC(); return; }
-  await dopoEC('Giorno diviso in mattina e pomeriggio.');
+  const np=await passaDisponibilita([ins.data], eraG?{[ins.data.id]:candT.map(x=>x.collaboratore_id)}:null);
+  await dopoEC('Giorno diviso in mattina e pomeriggio.'+testoPassate(np));
 }
 async function ecUnisci(d){
   const E=S.ec, tg=turniGiornoEC(d), attivi=tg.filter(t=>!t.annullato&&fasciaDi(t)!=='G');
@@ -1213,8 +1268,10 @@ async function ecCreaGiorno(d){
   const e=S.ec.e, fe=fasceEvento(e);
   const righe=['M','G','P'].filter(k=>fe[k]).map(k=>({piscina_id:e.piscina_id, evento_id:e.id, data:d, ora_inizio:fe[k][0], ora_fine:fe[k][1], fotografi:e.fotografi, stampatori:e.stampatori}));
   if(!righe.length) return;
-  if(errore((await sb.from('tp_turni').insert(righe)).error)) return;
-  await dopoEC('Turni creati.');
+  const ins=await sb.from('tp_turni').insert(righe).select();
+  if(errore(ins.error)) return;
+  const np=await passaDisponibilita(ins.data);
+  await dopoEC('Turni creati.'+testoPassate(np));
 }
 
 async function eliminaEvento(id){
@@ -1644,8 +1701,12 @@ function elencoPersone(t){
   const persone=ids.map(id=>({ c:collabById(id)||{id,nome:'?'}, a:ass.find(x=>x.collaboratore_id===id), cand:k.some(x=>x.collaboratore_id===id) }))
     .sort((x,y)=>(!!y.a-!!x.a) || x.c.nome.localeCompare(y.c.nome));
   const altri=S.collab.filter(c=>c.attivo && !ids.includes(c.id)).sort((a,b)=>a.nome.localeCompare(b.nome));
+  const nasc=sedeNascosta(t.piscina_id);
     const riga = ({c,a,cand}) => {
       const info=`<small class="note">${RUOLI[c.ruolo]||''} · <span class="stelle">${stelle(c.livello||0)}</span>${c.auto?' · 🚗':''}</small>`;
+      // piscine: chi è già in squadra in un'altra sede alla stessa ora resta candidato qui, ma in grigio e senza pulsanti
+      const fuori = !a && nasc && giaInSquadraAltrove(c.id,t);
+      if(fuori) return `<div class="gcr fuori"><div class="gcn"><b>${esc(c.nome)}</b> ${info}<div class="note">In squadra a <b>${esc((piscinaById(fuori.piscina_id)||{nome:'?'}).nome)}</b> ${hm(fuori.ora_inizio)}–${hm(fuori.ora_fine)}</div></div></div>`;
       const sq = a ? `<div class="note">In squadra come <b>${a.ruolo==='F'?'foto':'stampa'}</b>${cand?'':' (non candidato)'}</div>` : '';
       const bott = a
         ? `<button type="button" class="btn pic del" onclick="togliSquadraGC('${a.id}')">Togli dalla squadra</button>`
@@ -1665,11 +1726,12 @@ function renderGC(){
     const p=piscinaById(t.piscina_id)||{nome:'?'}; const k=S.cand.filter(x=>x.turno_id===t.id); const posti=(t.fotografi||0)+(t.stampatori||0);
     const ass=S.ass.filter(a=>a.turno_id===t.id);
     const nF=ass.filter(a=>a.ruolo==='F').length, nS=ass.filter(a=>a.ruolo==='S').length;
+    const nFuori = sedeNascosta(t.piscina_id) ? k.filter(x=>!ass.some(a=>a.collaboratore_id===x.collaboratore_id) && giaInSquadraAltrove(x.collaboratore_id,t)).length : 0;
     const stato = t.annullato ? '<span class="stato ann">Annullato</span>'
       : t.pubblicato ? '<span class="stato pubb">✓ Squadra pubblicata</span>' : '<span class="stato bozza">Squadra da pubblicare</span>';
     return `<div class="gct ${t.annullato?'':t.pubblicato?'pubb':'bozza'}" style="border-left:6px solid ${coloreSede(p)}">
       <div class="t-head"><b>${esc(p.nome)}</b><span class="t-ora">${hm(t.ora_inizio)}–${hm(t.ora_fine)}</span> ${stato}</div>
-      <div class="note">Servono ${t.fotografi} foto + ${t.stampatori} stampa · candidati <b>${k.length}</b> · in squadra <b class="${nF>=t.fotografi&&nS>=t.stampatori?'okc':'koc'}">${ass.length}/${posti}</b> (foto ${nF}/${t.fotografi}, stampa ${nS}/${t.stampatori})</div>
+      <div class="note">Servono ${t.fotografi} foto + ${t.stampatori} stampa · candidati <b>${k.length}</b>${nFuori?' (di cui '+nFuori+' già in squadra altrove)':''} · in squadra <b class="${nF>=t.fotografi&&nS>=t.stampatori?'okc':'koc'}">${ass.length}/${posti}</b> (foto ${nF}/${t.fotografi}, stampa ${nS}/${t.stampatori})</div>
       ${t.annullato?'':`${elencoPersone(t)}
       <div class="gca" style="margin-top:8px">${t.pubblicato
         ? `<button type="button" class="btn pic" onclick="pubblicaGC('${t.id}',false)">Ritira la pubblicazione</button>`
