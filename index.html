@@ -182,6 +182,7 @@ main{max-width:1100px;margin:0 auto;padding:16px}
 .fx{display:flex;gap:2px;justify-content:center}
 .fx button{width:22px;height:22px;border:1px solid var(--line);border-radius:4px;background:#fff;font:700 .7rem var(--fc);color:#B5B6B9;padding:0}
 .fx button.si{background:var(--ok);border-color:var(--ok);color:#fff}
+.fx button.si.altrove{opacity:.35}
 
 dialog{border:0;border-radius:14px;padding:0;width:min(560px,94vw);max-height:90vh;color:var(--ink)}
 dialog::backdrop{background:rgba(18,48,58,.45)}
@@ -539,8 +540,7 @@ async function ricarica(){ await caricaMese(); disegna(); }
 
 // ---------- struttura ----------
 function disegna(){
-  const nNuovi=S.collab.filter(c=>c.nuovo).length;
-  const tabs=[['turni','Eventi'],['disponibilita','Candidature'],['collaboratori','Collaboratori'+(nNuovi?' ('+nNuovi+(nNuovi===1?' nuovo)':' nuovi)'):'')],['piscine','Sedi'],['riepilogo','Riepilogo']];
+  const tabs=[['turni','Eventi'],['disponibilita','Candidature'],['collaboratori','Collaboratori'],['piscine','Sedi'],['riepilogo','Riepilogo']];
   document.getElementById('app').innerHTML = `
   <header>
     <div class="top"><img class="logo" src="logo-bianco.png" alt="Frame About You"><h1>Turni</h1><span class="chi">${esc(S.me.nome)}</span><button onclick="esci()">Esci</button></div>
@@ -869,6 +869,8 @@ function giaInSquadraAltrove(cid,t){   // la persona è in squadra in un altro t
   return S.ass.filter(a=>a.collaboratore_id===cid && a.turno_id!==t.id).map(a=>S.turni.find(x=>x.id===a.turno_id))
     .find(x=>x && !x.annullato && x.data===t.data && hm(x.ora_inizio)<hm(t.ora_fine) && hm(t.ora_inizio)<hm(x.ora_fine));
 }
+// testo per il passaggio del mouse: dove è già in squadra
+function testoAltrove(x){ return 'Già in squadra a '+(piscinaById(x.piscina_id)||{nome:'?'}).nome+', '+nomeGiorno(x.data)+' '+hm(x.ora_inizio)+'–'+hm(x.ora_fine); }
 // nuovi = turni appena creati (con id). extra = {turno_id:[collaboratore_id,…]} da copiare comunque (es. pomeriggio di un giorno diviso).
 // Restituisce quante candidature ha aggiunto. Non blocca mai il salvataggio: se qualcosa va storto, avvisa e basta.
 async function passaDisponibilita(nuovi, extra){
@@ -1753,7 +1755,10 @@ function vistaDisp(){
     h+=`<tr><td class="nome">${esc(c.nome)}</td>`+turniV.map(t=>{
       const k=S.cand.some(x=>x.turno_id===t.id&&x.collaboratore_id===c.id);
       const sq=S.ass.some(x=>x.turno_id===t.id&&x.collaboratore_id===c.id);
-      return `<td><div class="fx"><button class="${sq?'sq':k?'si':''}" title="${sq?'In squadra':k?'Candidato: tocca per togliere':'Tocca per candidare'}" onclick="toggleCand('${c.id}','${t.id}')">${sq?'★':k?'✓':''}</button></div></td>`;
+      // piscine: candidato qui ma già in squadra in un'altra sede alla stessa ora → grigio, e passando sopra si vede dove
+      const altrove = !sq && k && sedeNascosta(t.piscina_id) ? giaInSquadraAltrove(c.id,t) : null;
+      const tit = sq ? 'In squadra' : altrove ? testoAltrove(altrove) : k ? 'Candidato: tocca per togliere' : 'Tocca per candidare';
+      return `<td><div class="fx"><button class="${sq?'sq':k?'si':''} ${altrove?'altrove':''}" title="${esc(tit)}" onclick="toggleCand('${c.id}','${t.id}')">${sq?'★':k?'✓':''}</button></div></td>`;
     }).join('')+'</tr>';
   });
   m.innerHTML=h+'</tbody></table></div><p class="note">✓ = candidato · ★ = in squadra · in alto i candidati sui posti del turno.</p>';
@@ -1799,7 +1804,7 @@ function elencoPersone(t){
       const info=`<small class="note">${RUOLI[c.ruolo]||''} · <span class="stelle">${stelle(c.livello||0)}</span>${c.auto?' · 🚗':''}</small>`;
       // piscine: chi è già in squadra in un'altra sede alla stessa ora resta candidato qui, ma in grigio e senza pulsanti
       const fuori = !a && nasc && giaInSquadraAltrove(c.id,t);
-      if(fuori) return `<div class="gcr fuori"><div class="gcn"><b>${esc(c.nome)}</b> ${info}<div class="note">In squadra a <b>${esc((piscinaById(fuori.piscina_id)||{nome:'?'}).nome)}</b> ${hm(fuori.ora_inizio)}–${hm(fuori.ora_fine)}</div></div></div>`;
+      if(fuori) return `<div class="gcr fuori" title="${esc(testoAltrove(fuori))}"><div class="gcn"><b>${esc(c.nome)}</b> ${info}<div class="note">In squadra a <b>${esc((piscinaById(fuori.piscina_id)||{nome:'?'}).nome)}</b> ${hm(fuori.ora_inizio)}–${hm(fuori.ora_fine)}</div></div></div>`;
       // a squadra pubblicata: la risposta del ragazzo (solo con il database aggiornato) e se il WhatsApp è partito
       const risp = a && t.pubblicato && ('risposta' in a)
         ? ' · '+(a.risposta==='si' ? '<span class="ok">✅ ha accettato</span>' : '⏳ in attesa di risposta')+(a.avvisato_il?' · ✉ avvisato':'') : '';
@@ -1894,11 +1899,11 @@ function vistaCollab(){
   const m=document.getElementById('main');
   let h='<div class="barra"><span class="spazio"></span><button class="btn pri" onclick="formCollab()">Nuovo collaboratore</button></div>';
   if(!S.collab.length) h+='<div class="vuoto">Nessun collaboratore. Aggiungi il primo.</div>';
-  const nNuovi=S.collab.filter(c=>c.nuovo).length;
-  if(nNuovi) h+=`<p class="note">${nNuovi===1?'1 nuovo iscritto':nNuovi+' nuovi iscritti'} dal calendario: controlla i dati e il livello (parte da 3) e premi Salva per confermarlo.</p>`;
-  h+='<div class="lista">'+S.collab.map(c=>`<div class="riga ${c.attivo?'':'off'}">
+  // dal più recente iscritto in alto (a parità di data, in ordine di nome)
+  const iscritto = c => c.created_at || c.creato || '';
+  const lista=[...S.collab].sort((a,b)=>String(iscritto(b)).localeCompare(String(iscritto(a))) || a.nome.localeCompare(b.nome));
+  h+='<div class="lista">'+lista.map(c=>`<div class="riga ${c.attivo?'':'off'}">
     <b>${esc(c.nome)}</b>
-    ${c.nuovo?'<span class="tag" style="background:var(--water);color:#fff;border-color:var(--water)">NUOVO</span>':''}
     <span class="tag">${RUOLI[c.ruolo]}</span>
     <span class="stelle" title="Livello ${c.livello}">${stelle(c.livello)}</span>
     ${c.auto?'<span title="Ha la macchina">🚗</span>':''}

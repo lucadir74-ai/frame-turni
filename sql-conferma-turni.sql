@@ -17,6 +17,8 @@ alter table public.tp_assegnazioni add column if not exists avvisato_il timestam
 alter table public.tp_assegnazioni add column if not exists creato timestamptz not null default now();
 alter table public.tp_turni add column if not exists pubblicato_il timestamptz;
 alter table public.tp_ritiri add column if not exists tipo text not null default 'ritiro';
+-- data di iscrizione dei collaboratori (per metterli in ordine dal più recente). Chi c'era già prende la data di oggi.
+alter table public.tp_collaboratori add column if not exists creato timestamptz not null default now();
 
 do $$ begin
   if not exists (select 1 from pg_constraint where conname = 'tp_assegnazioni_risposta_check') then
