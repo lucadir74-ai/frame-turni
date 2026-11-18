@@ -1542,16 +1542,23 @@ async function formLinkIncassi(id, rigenera){
 }
 
 function formLinkCalendario(){
-  const url=new URL('calendario.html', location.href).href;
-  const testo='Ciao! Qui trovi il calendario dei turni: tocca quelli che puoi fare per candidarti e controlla la tua squadra. '+url;
+  const base=new URL('calendario.html', location.href).href;
+  // tre link alla stessa pagina: cambia solo cosa si vede all'apertura (in alto i ragazzi possono comunque passare all'altro)
+  const link=[
+    { t:'Solo piscine', url:base+'?solo=piscine', msg:'Ciao! Qui dai la tua disponibilità per le piscine: tocca i giorni e le fasce (mattina, pomeriggio o tutto il giorno) in cui puoi lavorare. La piscina e la squadra le vedi quando la squadra è pubblicata. ' },
+    { t:'Solo Christmas', url:base+'?solo=christmas', msg:'Ciao! Qui trovi i turni del Christmas World: tocca quelli che puoi fare per candidarti e controlla la tua squadra. ' },
+    { t:'Tutto insieme', url:base+'?solo=tutto', msg:'Ciao! Qui trovi il calendario dei turni: tocca quelli che puoi fare per candidarti e controlla la tua squadra. ' },
+  ];
   apriDialog('Link calendario', `
-    <p style="margin:0 0 10px">Lo stesso link per tutti i collaboratori. Al primo accesso scrivono i propri dati (chi è già iscritto viene riconosciuto) e il telefono se li ricorda.</p>
-    <p class="note" style="word-break:break-all;margin:0 0 12px">${esc(url)}</p>
-    <p class="note" style="margin:0 0 12px">Mostra solo date, orari e la propria candidatura: niente elenco dei candidati, contatti, livelli o cifre. Il nome della sede si vede solo per le sedi con “Nome visibile” (es. Christmas World); per le altre i ragazzi vedono solo la giornata e la fascia, e la sede la scopre chi è nella squadra pubblicata. I nomi dei colleghi in turno si vedono solo negli eventi con “Colleghi visibili: sì”; altrimenti ognuno vede solo i propri turni.</p>
-    <div class="azioni">
-      <button type="button" class="btn pic" onclick="copia('${url}')">Copia link</button>
-      <a class="btn pic pri" style="text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(testo)}">Manda su WhatsApp</a>
-    </div>`, null, null, 'Chiudi');
+    <p style="margin:0 0 10px">Al primo accesso i collaboratori scrivono i propri dati (chi è già iscritto viene riconosciuto) e il telefono se li ricorda. Ogni link apre il calendario già filtrato; in alto c'è comunque il tasto per passare all'altro.</p>
+    ${link.map(l=>`<div style="border:1px solid var(--line);border-radius:10px;padding:10px;margin:0 0 10px">
+      <b>${l.t}</b>
+      <p class="note" style="word-break:break-all;margin:4px 0 8px">${esc(l.url)}</p>
+      <div class="azioni" style="margin:0">
+        <button type="button" class="btn pic" onclick="copia('${l.url}')">Copia link</button>
+        <a class="btn pic pri" style="text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(l.msg+l.url)}">Manda su WhatsApp</a>
+      </div></div>`).join('')}
+    <p class="note" style="margin:0 0 12px">Mostra solo date, orari e la propria candidatura: niente elenco dei candidati, contatti, livelli o cifre. Il nome della sede si vede solo per le sedi con “Nome visibile” (es. Christmas World); per le altre i ragazzi vedono solo la giornata e la fascia, e la sede la scopre chi è nella squadra pubblicata. I nomi dei colleghi in turno si vedono solo negli eventi con “Colleghi visibili: sì”; altrimenti ognuno vede solo i propri turni.</p>`, null, null, 'Chiudi');
 }
 
 // ---------- PROPOSTA AUTOMATICA ----------

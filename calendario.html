@@ -65,6 +65,9 @@ main{max-width:640px;margin:0 auto;padding:16px}
 .sedi{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 6px}
 .sedi button{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:99px;padding:6px 14px;font-weight:600}
 .sedi button[aria-current=true]{background:var(--water);border-color:var(--water);color:#fff}
+.ambiti{display:flex;gap:4px;margin:0 0 12px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:4px}
+.ambiti button{flex:1;border:0;background:none;color:var(--ink);border-radius:9px;padding:9px 6px;font-weight:600}
+.ambiti button[aria-current=true]{background:var(--water);color:#fff}
 .giorno.mio{border-color:var(--water);box-shadow:inset 4px 0 0 var(--water)}
 .az{margin-top:12px}
 .az .btnpri{padding:10px}
@@ -114,8 +117,34 @@ main{max-width:640px;margin:0 auto;padding:16px}
 <div id="app"></div>
 <div id="toast" role="status"></div>
 <script>
-const CHIAVE_NOME = 'frame_turni_io';
-let sb=null; const S={ turni:[], io:null, vista:'cal', sede:null, mese:null, giorno:null };
+const CHIAVE_NOME = 'frame_turni_io', CHIAVE_AMBITO = 'frame_turni_ambito';
+let sb=null; const S={ tutti:[], turni:[], io:null, vista:'cal', sede:null, mese:null, giorno:null, ambito:'tutto' };
+
+// Ambito: "piscine" = sedi nascoste (le disponibilità), "christmas" = sedi con nome visibile (Christmas World).
+// Il link può sceglierlo (calendario.html?solo=piscine oppure ?solo=christmas) e il telefono se lo ricorda;
+// in alto restano comunque i tasti per cambiarlo, così nessuno resta bloccato.
+const AMBITI = { tutto:'Tutto', christmas:'Christmas', piscine:'Piscine' };
+function ambitoDi(t){ return t.visibile ? 'christmas' : 'piscine'; }
+function leggiAmbito(){
+  let v=null; try{ v=new URLSearchParams(location.search).get('solo'); }catch(e){}
+  if(v && AMBITI[v]){ try{ localStorage.setItem(CHIAVE_AMBITO,v); }catch(e){} return v; }
+  try{ v=localStorage.getItem(CHIAVE_AMBITO); }catch(e){ v=null; }
+  return AMBITI[v] ? v : 'tutto';
+}
+function applicaAmbito(){ S.turni = S.ambito==='tutto' ? S.tutti : S.tutti.filter(t=>ambitoDi(t)===S.ambito); }
+function cambiaAmbito(v){
+  S.ambito=v; S.mese=null; S.sede=null; S.giorno=null;
+  try{ localStorage.setItem(CHIAVE_AMBITO,v); }catch(e){}
+  applicaAmbito(); aggiorna(); window.scrollTo(0,0);
+}
+// i tasti compaiono solo se ci sono sia turni del Christmas sia disponibilità delle piscine
+function tastiAmbito(){
+  const ci=new Set(S.tutti.map(ambitoDi));
+  if(ci.size<2 && S.ambito==='tutto') return '';
+  return '<div class="ambiti">'+Object.entries(AMBITI).map(([k,l])=>`<button aria-current="${S.ambito===k}" onclick="cambiaAmbito('${k}')">${l}</button>`).join('')+'</div>';
+}
+function vuotoAmbito(){ return S.ambito==='piscine' ? 'Al momento non ci sono disponibilità richieste per le piscine.'
+  : S.ambito==='christmas' ? 'Al momento non ci sono turni del Christmas.' : 'Al momento non ci sono turni in programma.'; }
 
 function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function hm(t){ return (t||'').slice(0,5); }
@@ -132,6 +161,7 @@ async function avvio(){
   if(!window.supabase) return messaggio('Connessione assente: ricarica la pagina.');
   if(!/^https:\/\/.+\.supabase\.co/.test(window.SUPABASE_URL||'')) return messaggio('Configurazione mancante.');
   sb = supabase.createClient(window.SUPABASE_URL, window.SUPABASE_KEY, { auth:{ persistSession:false } });
+  S.ambito=leggiAmbito();
   const salvato=leggiIo();
   if(!salvato) return formIscrizione();
   const r = await carica(salvato);
@@ -146,7 +176,8 @@ async function carica(id){
   let r = await sb.rpc('tp_pub_calendario', { p_collab:id });
   if(r.error) r = await sb.rpc('tp_pub_calendario');
   if(r.error || !r.data) return null;
-  S.turni = raggruppa((r.data.turni||[]).map(t=>normalizza(t,id)));
+  S.tutti = raggruppa((r.data.turni||[]).map(t=>normalizza(t,id)));
+  applicaAmbito();
   return { io: r.data.io || (r.data.staff||[]).find(c=>c.id===id) || null };
 }
 const sonoIo = x => x.io===true || (x.id!=null && x.id===S.io.id);
@@ -256,11 +287,11 @@ function vistaTurni(){
   let lista = S.turni.filter(t=> !S.sede || t.piscina===S.sede);
   if(S.vista==='miei'){ const o=oggiStr(); lista=lista.filter(t=>mio(t) && t.data>=o); }
   lista=[...lista].sort((x,y)=>x.data.localeCompare(y.data)||hm(x.ora_inizio).localeCompare(hm(y.ora_inizio)));
-  let h = S.vista==='miei'
+  let h = tastiAmbito() + (S.vista==='miei'
     ? '<p class="intro">I turni da oggi in poi a cui ti sei candidato e quelli in cui sei in squadra.</p>'
-    : '<p class="intro">Tocca <b>Mi candido</b> sui turni che puoi fare. La squadra la scelgono gli organizzatori e, quando è pubblicata, la trovi qui.</p>';
+    : '<p class="intro">Tocca <b>Mi candido</b> sui turni che puoi fare. La squadra la scelgono gli organizzatori e, quando è pubblicata, la trovi qui.</p>');
   if(sedi.length>1) h+='<div class="sedi"><button aria-current="'+(!S.sede)+'" onclick="filtraSede(null)">Tutte</button>'+sedi.map(n=>`<button aria-current="${S.sede===n}" onclick='filtraSede(${JSON.stringify(n).replace(/'/g,"&#39;")})'>${esc(n)}</button>`).join('')+'</div>';
-  if(!lista.length){ m.innerHTML=h+'<div class="vuoto">'+(S.vista==='miei'?'Non ti sei ancora candidato a nessun turno.':'Al momento non ci sono turni in programma.')+'</div>'; return; }
+  if(!lista.length){ m.innerHTML=h+'<div class="vuoto">'+(S.vista==='miei'?'Non ti sei ancora candidato a nessun turno.':vuotoAmbito())+'</div>'; return; }
   let sett=null;
   lista.forEach(t=>{
     const l=lunedi(t.data).getTime();
@@ -299,7 +330,7 @@ const PALETTE=['#EB0089','#1E6FD9','#E07B00','#2E9D5B','#7B3FC4','#00A3A3','#C83
 function coloreT(t){ if(!t.visibile) return '#818286'; if(t.colore) return t.colore; let h=0; for(const ch of String(t.piscina_id||t.piscina)) h=(h*31+ch.charCodeAt(0))>>>0; return PALETTE[h%PALETTE.length]; }
 function oggiStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function aggiorna(){ if(S.vista==='miei') vistaTurni(); else { vistaCal(); if(S.giorno) apriGiorno(S.giorno,true); } }
-function sovrapposti(t){ if(!t) return []; return S.turni.filter(x=>x.id!==t.id && x.data===t.data && !x.annullato && x.candidati.some(sonoIo)
+function sovrapposti(t){ if(!t) return []; return S.tutti.filter(x=>x.id!==t.id && x.data===t.data && !x.annullato && x.candidati.some(sonoIo)
   && hm(x.ora_inizio)<hm(t.ora_fine) && hm(t.ora_inizio)<hm(x.ora_fine)); }
 function mesiConTurni(){ return [...new Set(S.turni.map(t=>t.data.slice(0,7)))].sort(); }
 function cambiaMeseCal(n){ const [y,m]=S.mese.split('-').map(Number); const d=new Date(y,m-1+n,1); S.mese=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); vistaCal(); }
@@ -307,12 +338,12 @@ function cambiaMeseCal(n){ const [y,m]=S.mese.split('-').map(Number); const d=ne
 function vistaCal(){
   const m=document.getElementById('main');
   const mesi=mesiConTurni();
-  if(!mesi.length){ m.innerHTML='<div class="vuoto">Al momento non ci sono turni in programma.</div>'; return; }
+  if(!mesi.length){ m.innerHTML=tastiAmbito()+'<div class="vuoto">'+vuotoAmbito()+'</div>'; return; }
   if(!S.mese){ const o=oggiStr().slice(0,7); S.mese = mesi.includes(o) ? o : mesi[0]; }
   const [y,mm]=S.mese.split('-').map(Number);
   const nomeM=new Date(y,mm-1,1).toLocaleDateString('it-IT',{month:'long',year:'numeric'});
   const sedi=[]; S.turni.filter(t=>t.data.slice(0,7)===S.mese).forEach(t=>{ if(!sedi.some(x=>x.n===t.piscina)) sedi.push({n:t.piscina,c:coloreT(t)}); });
-  let h=`<div class="mesebar"><button onclick="cambiaMeseCal(-1)" ${S.mese<=mesi[0]?'disabled':''} aria-label="Mese precedente">‹</button><h2>${nomeM}</h2><button onclick="cambiaMeseCal(1)" ${S.mese>=mesi[mesi.length-1]?'disabled':''} aria-label="Mese successivo">›</button></div>`;
+  let h=tastiAmbito()+`<div class="mesebar"><button onclick="cambiaMeseCal(-1)" ${S.mese<=mesi[0]?'disabled':''} aria-label="Mese precedente">‹</button><h2>${nomeM}</h2><button onclick="cambiaMeseCal(1)" ${S.mese>=mesi[mesi.length-1]?'disabled':''} aria-label="Mese successivo">›</button></div>`;
   h+='<div class="legenda">'+sedi.map(x=>`<span><i style="background:${x.c}"></i>${esc(x.n)}</span>`).join('')+'<span style="color:var(--muted)">'+['M = mattina','P = pomeriggio','G = tutto il giorno'].filter(x=>S.turni.some(t=>t.data.slice(0,7)===S.mese && fasciaDi(t)===x[0])).join(' · ')+'</span></div>';
   h+='<div class="cal">'+['L','M','M','G','V','S','D'].map(x=>`<div class="wd">${x}</div>`).join('');
   const primo=new Date(y,mm-1,1), ult=new Date(y,mm,0).getDate(), vuoti=(primo.getDay()+6)%7, oggi=oggiStr();
