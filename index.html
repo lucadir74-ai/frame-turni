@@ -97,6 +97,30 @@ main{max-width:1100px;margin:0 auto;padding:16px}
 .vistab{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin:0 0 12px}
 .vistab button{border:0;background:var(--card);padding:6px 14px;font-weight:600;color:var(--muted)}
 .vistab button[aria-current=true]{background:var(--ink);color:#fff}
+.vistab-sp{display:inline-block;width:8px}
+.stampa-b{margin:0 0 12px 8px;vertical-align:top}
+.solo-stampa{display:none}
+.griglia tr.tot td{font-weight:700;border-top:2px solid var(--line)}
+.griglia tr.tot td.pieno{color:var(--ok)}.griglia tr.tot td.manca{color:var(--warn)}
+@media print{
+  @page{size:A4 landscape;margin:8mm}
+  body.stampa-cand{background:#fff}
+  body.stampa-cand header,body.stampa-cand .barra,body.stampa-cand .sedi,body.stampa-cand .vistab,body.stampa-cand .vistab-sp,body.stampa-cand .stampa-b,body.stampa-cand dialog,body.stampa-cand #toast{display:none!important}
+  body.stampa-cand main{max-width:none!important;padding:0!important;margin:0!important}
+  body.stampa-cand .solo-stampa{display:block;margin:0 0 6px;font-size:11pt}
+  body.stampa-cand .griglia{overflow:visible;border:0;border-radius:0}
+  body.stampa-cand .griglia table{width:100%;font-size:6.5pt;table-layout:auto}
+  body.stampa-cand .griglia th,body.stampa-cand .griglia td{padding:1px;border:1px solid #ccc}
+  body.stampa-cand .griglia th{white-space:normal}
+  body.stampa-cand .griglia th.ev::after{display:none}
+  body.stampa-cand .griglia .pisc{font-size:5.5pt}
+  body.stampa-cand .griglia .nome{position:static;padding:1px 4px;font-size:7pt}
+  body.stampa-cand .griglia thead{display:table-header-group}
+  body.stampa-cand .griglia tr{break-inside:avoid}
+  body.stampa-cand .fx button{width:12px;height:12px;font-size:7pt;line-height:1;border-radius:2px}
+  body.stampa-cand *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  body.stampa-cand .note{font-size:7pt}
+}
 .calo{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
 .calo .wd{text-align:center;font:600 .8rem var(--fc);color:var(--muted);padding:2px 0}
 .calo .gg{background:var(--card);border:1px solid var(--line);border-radius:8px;min-height:92px;padding:4px 5px;display:flex;flex-direction:column;gap:3px;cursor:pointer;min-width:0}
@@ -1757,13 +1781,22 @@ function vistaDisp(){
     const tutti = S.turni.filter(t=>sedeScelta(t.piscina_id));   // anche gli annullati, barrati
     m.innerHTML = h + calendarioCand(tutti); return;
   }
-  if(!attivi.length){ m.innerHTML=h+'<div class="vuoto">Nessun collaboratore attivo.</div>'; return; }
+  // filtro righe: di base solo chi si è candidato o è in squadra in almeno un turno visibile; "Tutti" mostra anche gli altri attivi (per candidarli a mano)
+  const soloCand = S.soloCand!==false;
+  const idsV=new Set(turniV.map(t=>t.id));
+  const coinvolti=new Set([...S.cand,...S.ass].filter(x=>idsV.has(x.turno_id)).map(x=>x.collaboratore_id));
+  const righe = (soloCand ? S.collab.filter(c=>coinvolti.has(c.id)) : attivi).slice().sort((a,b)=>a.nome.localeCompare(b.nome));
+  h+=`<span class="vistab-sp"></span><div class="vistab"><button aria-current="${soloCand}" onclick="filtroCand(true)">Solo candidati e assegnati</button><button aria-current="${!soloCand}" onclick="filtroCand(false)">Tutti</button></div>`
+    +`<button class="btn pic stampa-b" onclick="stampaCand()">🖨 Stampa</button>`;
+  const sediTit = sediMese.filter(p=>sedeScelta(p.id)).map(p=>p.nome).join(', ');
+  h+=`<div class="solo-stampa stampa-tit"><b>Candidature · ${esc(nomeMese(S.mese))}</b> · ${esc(sediTit)}${soloCand?'':' · tutti i collaboratori'}</div>`;
+  if(!righe.length){ m.innerHTML=h+`<div class="vuoto">${soloCand?'Nessuno si è ancora candidato ai turni scelti.':'Nessun collaboratore attivo.'}</div>`; return; }
   h+='<div class="griglia"><table><thead><tr><th class="nome">Collaboratore</th>'+turniV.map(t=>{
     const [y,mm,g]=t.data.split('-').map(Number); const wd=new Date(y,mm-1,g).toLocaleDateString('it-IT',{weekday:'short'});
     const nc=S.cand.filter(k=>k.turno_id===t.id).length, posti=(t.fotografi||0)+(t.stampatori||0);
     return `<th class="ev">${wd} ${g}<div class="pisc">${nScelte>1?esc((piscinaById(t.piscina_id)||{nome:'?'}).nome)+'<br>':''}<span class="ore">${hm(t.ora_inizio)}–${hm(t.ora_fine)}</span><br><span class="${nc>=posti?'pieno':'manca'}">${nc}/${posti}</span></div></th>`;
   }).join('')+'</tr></thead><tbody>';
-  attivi.forEach(c=>{
+  righe.forEach(c=>{
     h+=`<tr><td class="nome">${esc(c.nome)}</td>`+turniV.map(t=>{
       const k=S.cand.some(x=>x.turno_id===t.id&&x.collaboratore_id===c.id);
       const sq=S.ass.some(x=>x.turno_id===t.id&&x.collaboratore_id===c.id);
@@ -1773,8 +1806,17 @@ function vistaDisp(){
       return `<td><div class="fx"><button class="${sq?'sq':k?'si':''} ${altrove?'altrove':''}" title="${esc(tit)}" onclick="toggleCand('${c.id}','${t.id}')">${sq?'★':k?'✓':''}</button></div></td>`;
     }).join('')+'</tr>';
   });
+  // ultima riga: totale candidati per turno (ripetuto in fondo, comodo sulla stampa)
+  h+='<tr class="tot"><td class="nome">Candidati</td>'+turniV.map(t=>{
+    const nc=S.cand.filter(k=>k.turno_id===t.id).length, posti=(t.fotografi||0)+(t.stampatori||0);
+    return `<td class="${nc>=posti?'pieno':'manca'}">${nc}</td>`;
+  }).join('')+'</tr>';
   m.innerHTML=h+'</tbody></table></div><p class="note">✓ = candidato · ★ = in squadra · in alto i candidati sui posti del turno.</p>';
 }
+function filtroCand(v){ S.soloCand=v; vistaDisp(); }
+// stampa il mese intero in orizzontale (vedi @media print): si nasconde tutto tranne la tabella
+function stampaCand(){ document.body.classList.add('stampa-cand'); window.print(); }
+window.addEventListener('afterprint', ()=>document.body.classList.remove('stampa-cand'));
 // sedi tolte dal filtro (si ricordano anche cambiando mese; una sede nuova si vede finché non la togliete)
 // testo bianco sui colori scuri, quasi nero su quelli chiari (es. giallo, verde lime): si legge sempre
 function testoSu(hex){
