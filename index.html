@@ -85,6 +85,8 @@ main{max-width:1100px;margin:0 auto;padding:16px}
 .cs{font-size:.78rem;font-weight:600;padding:2px 10px;border-radius:99px;white-space:nowrap}
 .cs.ok{background:#E7F3EC;color:var(--ok)}.cs.att{background:#FDF0E6;color:var(--warn)}
 #dlg .turno{margin:0;border:0;border-left:0;padding:0}
+#dlg .turno.pubb{border:2px solid var(--water);background:#FFF7FB;border-radius:10px;padding:10px}
+#dlg .turno.bozza{border:1px dashed var(--line);border-radius:10px;padding:10px}
 .ritiri{background:#FBE9EA;border:1px solid #F0C4C7;border-radius:10px;padding:10px 14px;margin:0 0 14px;color:var(--red)}
 .ritiri .rit{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:6px;color:var(--ink)}
 .griglia .fx button.sq{border-color:var(--water);background:var(--water);color:#fff}
@@ -656,21 +658,21 @@ function cardTurno(t){
           ${a.ass.length?`<div class="note" style="margin-top:6px">Squadra prevista: ${a.ass.map(x=>esc((collabById(x.collaboratore_id)||{nome:'?'}).nome)).join(', ')}</div>`:''}
           <div class="azioni"><button class="btn pic pri" onclick="ripristinaTurno('${t.id}')">Ripristina</button><button class="btn pic del" onclick="eliminaTurno('${t.id}')">Elimina</button></div></div>`;
         }
-        return `<div class="turno ${t.pubblicato?'':'bozza'}">
-          <div class="t-head"><b>${esc(p.nome)}</b>${puntini(p.importanza)}<span class="t-ora">${hm(t.ora_inizio)}–${hm(t.ora_fine)}</span><span class="stato ${t.pubblicato?'':'bozza'}">${t.pubblicato?'Squadra pubblicata':'Squadra da pubblicare'}</span></div>
+        return `<div class="turno ${t.pubblicato?'pubb':'bozza'}">
+          <div class="t-head"><b>${esc(p.nome)}</b>${puntini(p.importanza)}<span class="t-ora">${hm(t.ora_inizio)}–${hm(t.ora_fine)}</span><span class="stato ${t.pubblicato?'pubb':'bozza'}">${t.pubblicato?'✓ Squadra pubblicata':'Squadra da pubblicare'}</span></div>
           <div class="req"><span class="${cls(a.nF,t.fotografi)}">Fotografi ${a.nF}/${t.fotografi}</span><span class="${cls(a.nS,t.stampatori)}">Stampatori ${a.nS}/${t.stampatori}</span></div>
-          <div class="chips">${a.ass.map(x=>{const c=collabById(x.collaboratore_id)||{nome:'?'};return `<span class="chip"><span class="r ${x.ruolo}">${x.ruolo==='F'?'FOTO':'STAMPA'}</span>${esc(c.nome)}${c.auto?' 🚗':''}<button title="Togli ${esc(c.nome)}" onclick="togli('${x.id}')">×</button></span>`}).join('')}</div>
+          <div class="note" style="margin-top:6px">Candidati <b>${S.cand.filter(x=>x.turno_id===t.id).length}</b> · in squadra <b>${a.ass.length}/${(t.fotografi||0)+(t.stampatori||0)}</b></div>
           ${t.note?`<div class="note">${esc(t.note)}</div>`:''}
-          ${rigaCandidati(t)}
+          ${elencoPersone(t)}
           ${rigaIncassi(t)}
           ${rigaPresenze(t,a)}
           ${a.avvisi.length?`<ul class="avvisi">${a.avvisi.map(v=>'<li>⚠ '+esc(v)+'</li>').join('')}</ul>`:''}
           <div class="azioni">
-            <button class="btn pic pri" onclick="formAssegna('${t.id}')">Assegna persone</button>
+            <button class="btn pic ${t.pubblicato?'':'pri'}" ${t.pubblicato||a.ass.length?'':'disabled'} onclick="pubblicaGC('${t.id}',${!t.pubblicato})">${t.pubblicato?'Ritira la pubblicazione':'Pubblica squadra'}</button>
+            <button class="btn pic" onclick="formAssegna('${t.id}')">Tutti i collaboratori</button>
             <button class="btn pic" ${a.nS?'':'disabled title="Assegna prima lo stampatore"'} onclick="formLinkIncassi('${t.id}')">Link incassi</button>
             <button class="btn pic" ${a.ass.length?'':'disabled'} onclick="formPresenze('${t.id}')">Presenze</button>
             <button class="btn pic" ${a.ass.length?'':'disabled'} onclick="formCompensi('${t.id}')">Compensi</button>
-            <button class="btn pic" onclick="pubblica('${t.id}',${!t.pubblicato})">${t.pubblicato?'Ritira squadra':'Pubblica squadra'}</button>
             <button class="btn pic" onclick="formTurno('${t.id}')">Modifica giorno</button>
             <button class="btn pic" onclick="formAnnulla('${t.id}')">Annulla turno</button>
             <button class="btn pic del" onclick="eliminaTurno('${t.id}')">Elimina giorno</button>
@@ -1277,15 +1279,6 @@ async function ripristinaTurno(id){
 }
 function oreAss(x,t){ if(x.presente!==true) return 0; return Math.max(0, minuti(x.ora_fine_eff||t.ora_fine)-minuti(x.ora_inizio_eff||t.ora_inizio))/60; }
 function fmtOre(h){ return (Math.round(h*10)/10).toLocaleString('it-IT')+' h'; }
-function rigaCandidati(t){
-  const k=S.cand.filter(x=>x.turno_id===t.id); const posti=(t.fotografi||0)+(t.stampatori||0);
-  if(!k.length) return '<div class="note">Nessun candidato per ora</div>';
-  const inSq=x=>S.ass.some(a=>a.turno_id===t.id&&a.collaboratore_id===x.collaboratore_id);
-  const righe=[...k].sort((x,y)=>inSq(x)-inSq(y)).map(x=>{ const c=collabById(x.collaboratore_id)||{nome:'?',ruolo:'F'}, sq=inSq(x);
-    return `<div class="cd"><b>${esc(c.nome)}</b><span class="tag">${RUOLI[c.ruolo]||''}</span>${c.auto?'<span title="Ha la macchina">🚗</span>':''}<span class="sp"></span><span class="cs ${sq?'ok':'att'}">${sq?'In squadra':'Da scegliere'}</span></div>`; }).join('');
-  const attesa=k.filter(x=>!inSq(x)).length;
-  return `<div class="cands"><div class="cands-h">Candidati: ${k.length} · posti da coprire: ${posti}</div>${righe}${attesa?'<div class="note">“Da scegliere” = si è candidato ma non è ancora in squadra: usa “Assegna persone”.</div>':''}</div>`;
-}
 function rigaPresenze(t,a){
   if(!a.ass.length) return '';
   if(t.presenze_ok){
@@ -1643,20 +1636,14 @@ function giornoCand(d){
   apriDialog(nomeGiorno(d).replace(/^./,c=>c.toUpperCase()), `<div id="gc" data-d="${d}"></div>`);
   renderGC();
 }
-function renderGC(){
-  const box=document.getElementById('gc'); if(!box) return; const d=box.dataset.d;
-  const tg=S.turni.filter(t=>t.data===d && (S.sedeDisp==='tutte'||t.piscina_id===S.sedeDisp)).sort((a,b)=>hm(a.ora_inizio).localeCompare(hm(b.ora_inizio)));
-  box.innerHTML = tg.map(t=>{
-    const p=piscinaById(t.piscina_id)||{nome:'?'}; const k=S.cand.filter(x=>x.turno_id===t.id); const posti=(t.fotografi||0)+(t.stampatori||0);
-    const ass=S.ass.filter(a=>a.turno_id===t.id);
-    const nF=ass.filter(a=>a.ruolo==='F').length, nS=ass.filter(a=>a.ruolo==='S').length;
-    // in elenco: prima chi è in squadra (anche se non si era candidato), poi gli altri candidati
-    const ids=[...new Set([...ass.map(a=>a.collaboratore_id), ...k.map(x=>x.collaboratore_id)])];
-    const persone=ids.map(id=>({ c:collabById(id)||{id,nome:'?'}, a:ass.find(x=>x.collaboratore_id===id), cand:k.some(x=>x.collaboratore_id===id) }))
-      .sort((x,y)=>(!!y.a-!!x.a) || x.c.nome.localeCompare(y.c.nome));
-    const altri=S.collab.filter(c=>c.attivo && !ids.includes(c.id)).sort((a,b)=>a.nome.localeCompare(b.nome));
-    const stato = t.annullato ? '<span class="stato ann">Annullato</span>'
-      : t.pubblicato ? '<span class="stato pubb">✓ Squadra pubblicata</span>' : '<span class="stato bozza">Squadra da pubblicare</span>';
+// elenco di chi è in squadra (★, sfondo verde chiaro) e dei candidati, con i tasti Foto/Stampa e "Aggiungi candidato":
+// lo stesso nella finestra del giorno (Candidature) e nel dettaglio del turno (Eventi)
+function elencoPersone(t){
+  const k=S.cand.filter(x=>x.turno_id===t.id), ass=S.ass.filter(a=>a.turno_id===t.id);
+  const ids=[...new Set([...ass.map(a=>a.collaboratore_id), ...k.map(x=>x.collaboratore_id)])];
+  const persone=ids.map(id=>({ c:collabById(id)||{id,nome:'?'}, a:ass.find(x=>x.collaboratore_id===id), cand:k.some(x=>x.collaboratore_id===id) }))
+    .sort((x,y)=>(!!y.a-!!x.a) || x.c.nome.localeCompare(y.c.nome));
+  const altri=S.collab.filter(c=>c.attivo && !ids.includes(c.id)).sort((a,b)=>a.nome.localeCompare(b.nome));
     const riga = ({c,a,cand}) => {
       const info=`<small class="note">${RUOLI[c.ruolo]||''} · <span class="stelle">${stelle(c.livello||0)}</span>${c.auto?' · 🚗':''}</small>`;
       const sq = a ? `<div class="note">In squadra come <b>${a.ruolo==='F'?'foto':'stampa'}</b>${cand?'':' (non candidato)'}</div>` : '';
@@ -1667,12 +1654,23 @@ function renderGC(){
           + `<button type="button" class="btn pic del" onclick="ritiraCandGC('${c.id}','${t.id}')">Togli candidatura</button>`;
       return `<div class="gcr ${a?'sq':''}"><div class="gcn">${a?'<b class="stella" title="In squadra">★</b> ':''}<b>${esc(c.nome)}</b> ${info}${sq}</div><div class="gcb">${bott}</div></div>`;
     };
+  return `<div class="gcl">${persone.map(riga).join('') || '<div class="note">Nessun candidato per ora</div>'}</div>
+    <div class="gca"><select id="add_${t.id}"><option value="">Aggiungi candidato…</option>${altri.map(c=>`<option value="${c.id}">${esc(c.nome)}</option>`).join('')}</select>
+      <button type="button" class="btn pic" onclick="const v=document.getElementById('add_${t.id}').value; if(v) toggleCand(v,'${t.id}')">Aggiungi</button></div>`;
+}
+function renderGC(){
+  const box=document.getElementById('gc'); if(!box) return; const d=box.dataset.d;
+  const tg=S.turni.filter(t=>t.data===d && (S.sedeDisp==='tutte'||t.piscina_id===S.sedeDisp)).sort((a,b)=>hm(a.ora_inizio).localeCompare(hm(b.ora_inizio)));
+  box.innerHTML = tg.map(t=>{
+    const p=piscinaById(t.piscina_id)||{nome:'?'}; const k=S.cand.filter(x=>x.turno_id===t.id); const posti=(t.fotografi||0)+(t.stampatori||0);
+    const ass=S.ass.filter(a=>a.turno_id===t.id);
+    const nF=ass.filter(a=>a.ruolo==='F').length, nS=ass.filter(a=>a.ruolo==='S').length;
+    const stato = t.annullato ? '<span class="stato ann">Annullato</span>'
+      : t.pubblicato ? '<span class="stato pubb">✓ Squadra pubblicata</span>' : '<span class="stato bozza">Squadra da pubblicare</span>';
     return `<div class="gct ${t.annullato?'':t.pubblicato?'pubb':'bozza'}" style="border-left:6px solid ${coloreSede(p)}">
       <div class="t-head"><b>${esc(p.nome)}</b><span class="t-ora">${hm(t.ora_inizio)}–${hm(t.ora_fine)}</span> ${stato}</div>
       <div class="note">Servono ${t.fotografi} foto + ${t.stampatori} stampa · candidati <b>${k.length}</b> · in squadra <b class="${nF>=t.fotografi&&nS>=t.stampatori?'okc':'koc'}">${ass.length}/${posti}</b> (foto ${nF}/${t.fotografi}, stampa ${nS}/${t.stampatori})</div>
-      ${t.annullato?'':`<div class="gcl">${persone.map(riga).join('') || '<div class="note">Nessun candidato</div>'}</div>
-      <div class="gca"><select id="add_${t.id}"><option value="">Aggiungi candidato…</option>${altri.map(c=>`<option value="${c.id}">${esc(c.nome)}</option>`).join('')}</select>
-        <button type="button" class="btn pic" onclick="const v=document.getElementById('add_${t.id}').value; if(v) toggleCand(v,'${t.id}')">Aggiungi</button></div>
+      ${t.annullato?'':`${elencoPersone(t)}
       <div class="gca" style="margin-top:8px">${t.pubblicato
         ? `<button type="button" class="btn pic" onclick="pubblicaGC('${t.id}',false)">Ritira la pubblicazione</button>`
         : `<button type="button" class="btn pic pri" ${ass.length?'':'disabled'} onclick="pubblicaGC('${t.id}',true)">Pubblica squadra</button>`}
@@ -1687,15 +1685,16 @@ async function dopoGC(){
   const sx=document.querySelector('.griglia')?.scrollLeft; vistaDisp(); const g=document.querySelector('.griglia'); if(g) g.scrollLeft=sx||0;
   renderGC();
 }
+async function aggiornaDopo(){ if(document.getElementById('gc')) return dopoGC(); await ricarica(); }
 async function assegnaGC(tid,cid,ruolo){
   if(errore((await sb.from('tp_assegnazioni').insert({turno_id:tid, collaboratore_id:cid, ruolo})).error)) return;
-  await dopoGC();
+  await aggiornaDopo();
 }
 async function togliSquadraGC(aid){
   const a=S.ass.find(x=>x.id===aid); const t=a&&S.turni.find(x=>x.id===a.turno_id); const c=a&&collabById(a.collaboratore_id);
   if(t && t.pubblicato && !confirm('La squadra è già pubblicata: '+(c?c.nome:'questa persona')+' vede di essere in turno. Toglierlo dalla squadra? (La candidatura resta.)')) return;
   if(errore((await sb.from('tp_assegnazioni').delete().eq('id',aid)).error)) return;
-  await dopoGC();
+  await aggiornaDopo();
 }
 async function ritiraCandGC(cid,tid){
   await toggleCand(cid,tid);   // le due conferme sono dentro toggleCand
@@ -1704,7 +1703,7 @@ async function pubblicaGC(tid,val){
   if(!val && !confirm('Ritirare la pubblicazione? I collaboratori non vedranno più questa squadra. Le assegnazioni restano.')) return;
   if(errore((await sb.from('tp_turni').update({pubblicato:val}).eq('id',tid)).error)) return;
   toast(val?'Squadra pubblicata.':'Pubblicazione ritirata.');
-  await dopoGC();
+  await aggiornaDopo();
 }
 // togliere una candidatura chiede due conferme (dalla griglia e dalla finestra del giorno): è facile toccare per sbaglio
 function confermaTogliCand(cid,tid){
@@ -1722,6 +1721,7 @@ async function toggleCand(cid,tid){
               : await sb.from('tp_candidature').insert({collaboratore_id:cid,turno_id:tid}).select().single();
   if(errore(r.error)) return;
   if(c) S.cand=S.cand.filter(x=>x!==c); else S.cand.push(r.data);
+  if(S.tab!=='disponibilita'){ disegna(); return; }   // da Eventi: ridisegna la pagina e il dettaglio del turno
   const sx=document.querySelector('.griglia')?.scrollLeft; vistaDisp(); const g=document.querySelector('.griglia'); if(g) g.scrollLeft=sx||0;
   renderGC();
 }
