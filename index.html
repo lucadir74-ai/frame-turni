@@ -102,24 +102,34 @@ main{max-width:1100px;margin:0 auto;padding:16px}
 .solo-stampa{display:none}
 .griglia tr.tot td{font-weight:700;border-top:2px solid var(--line)}
 .griglia tr.tot td.pieno{color:var(--ok)}.griglia tr.tot td.manca{color:var(--warn)}
+.full-barra{display:none}
+body.tab-full{overflow:hidden}
+body.tab-full .full-barra{display:flex;position:fixed;left:0;right:0;top:0;height:40px;z-index:60;align-items:center;gap:10px;padding:0 10px;padding-left:max(10px,env(safe-area-inset-left));padding-right:max(10px,env(safe-area-inset-right));background:var(--nero);color:#fff;font-size:.85rem}
+body.tab-full .full-barra span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+body.tab-full .full-barra .btn{background:#fff;color:var(--ink)}
+body.tab-full .griglia.schermo{position:fixed;left:0;right:0;top:40px;bottom:0;z-index:55;overflow:auto;border:0;border-radius:0;padding-left:env(safe-area-inset-left);padding-bottom:env(safe-area-inset-bottom)}
+body.tab-full .griglia.schermo thead th{position:sticky;top:0;background:var(--card);z-index:2}
+body.tab-full .griglia.schermo thead th.nome{z-index:3}
 @media print{
   @page{size:A4 landscape;margin:8mm}
   body.stampa-cand{background:#fff}
-  body.stampa-cand header,body.stampa-cand .barra,body.stampa-cand .sedi,body.stampa-cand .vistab,body.stampa-cand .vistab-sp,body.stampa-cand .stampa-b,body.stampa-cand dialog,body.stampa-cand #toast{display:none!important}
+  body.stampa-cand #main>*:not(.stampa-parte),body.stampa-cand header,body.stampa-cand dialog,body.stampa-cand #toast{display:none!important}
   body.stampa-cand main{max-width:none!important;padding:0!important;margin:0!important}
-  body.stampa-cand .solo-stampa{display:block;margin:0 0 6px;font-size:11pt}
+  body.stampa-cand .solo-stampa{display:block}
+  body.stampa-cand .stampa-parte+.stampa-parte{break-before:page}
+  body.stampa-cand .stampa-tit{margin:0 0 6px;font-size:12pt}
   body.stampa-cand .griglia{overflow:visible;border:0;border-radius:0}
-  body.stampa-cand .griglia table{width:100%;font-size:6.5pt;table-layout:auto}
-  body.stampa-cand .griglia th,body.stampa-cand .griglia td{padding:1px;border:1px solid #ccc}
+  body.stampa-cand .griglia table{width:100%;font-size:9pt}
+  body.stampa-cand .griglia th,body.stampa-cand .griglia td{padding:3px 2px;border:1px solid #bbb}
   body.stampa-cand .griglia th{white-space:normal}
   body.stampa-cand .griglia th.ev::after{display:none}
-  body.stampa-cand .griglia .pisc{font-size:5.5pt}
-  body.stampa-cand .griglia .nome{position:static;padding:1px 4px;font-size:7pt}
+  body.stampa-cand .griglia .pisc{font-size:7.5pt}
+  body.stampa-cand .griglia .nome{position:static;padding:3px 6px;font-size:10pt}
   body.stampa-cand .griglia thead{display:table-header-group}
   body.stampa-cand .griglia tr{break-inside:avoid}
-  body.stampa-cand .fx button{width:12px;height:12px;font-size:7pt;line-height:1;border-radius:2px}
+  body.stampa-cand .fx button{width:20px;height:20px;font-size:10pt;line-height:1;border-radius:3px}
   body.stampa-cand *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-  body.stampa-cand .note{font-size:7pt}
+  body.stampa-cand .note{font-size:8pt}
 }
 .calo{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
 .calo .wd{text-align:center;font:600 .8rem var(--fc);color:var(--muted);padding:2px 0}
@@ -1787,11 +1797,26 @@ function vistaDisp(){
   const coinvolti=new Set([...S.cand,...S.ass].filter(x=>idsV.has(x.turno_id)).map(x=>x.collaboratore_id));
   const righe = (soloCand ? S.collab.filter(c=>coinvolti.has(c.id)) : attivi).slice().sort((a,b)=>a.nome.localeCompare(b.nome));
   h+=`<span class="vistab-sp"></span><div class="vistab"><button aria-current="${soloCand}" onclick="filtroCand(true)">Solo candidati e assegnati</button><button aria-current="${!soloCand}" onclick="filtroCand(false)">Tutti</button></div>`
-    +`<button class="btn pic stampa-b" onclick="stampaCand()">🖨 Stampa</button>`;
+    +`<button class="btn pic stampa-b" onclick="schermoCand(true)">⛶ Schermo intero</button><button class="btn pic stampa-b" onclick="stampaCand()">🖨 Stampa</button>`;
   const sediTit = sediMese.filter(p=>sedeScelta(p.id)).map(p=>p.nome).join(', ');
-  h+=`<div class="solo-stampa stampa-tit"><b>Candidature · ${esc(nomeMese(S.mese))}</b> · ${esc(sediTit)}${soloCand?'':' · tutti i collaboratori'}</div>`;
+  const tit=`<b>Candidature · ${esc(nomeMese(S.mese))}</b> · ${esc(sediTit)}${soloCand?'':' · tutti i collaboratori'}`;
   if(!righe.length){ m.innerHTML=h+`<div class="vuoto">${soloCand?'Nessuno si è ancora candidato ai turni scelti.':'Nessun collaboratore attivo.'}</div>`; return; }
-  h+='<div class="griglia"><table><thead><tr><th class="nome">Collaboratore</th>'+turniV.map(t=>{
+  // a schermo intero (telefono in orizzontale): solo la tabella, con il tasto per uscire
+  h+=`<div class="full-barra"><span>${tit}</span><button class="btn pic" onclick="schermoCand(false)">✕ Chiudi</button></div>`;
+  h+='<div class="griglia schermo">'+tabellaCand(turniV,righe,nScelte)+'</div><p class="note">✓ = candidato · ★ = in squadra · in alto i candidati sui posti del turno.</p>';
+  // per la stampa il mese è diviso in due fogli (1–15 e 16–fine), così la scritta è più grande
+  const meta=turniV.filter(t=>+t.data.slice(8)<=15), resto=turniV.filter(t=>+t.data.slice(8)>15);
+  h+=[meta,resto].filter(x=>x.length).map((parte,i,tutte)=>{
+    const rp = soloCand ? righe.filter(c=>[...S.cand,...S.ass].some(x=>x.collaboratore_id===c.id && parte.some(t=>t.id===x.turno_id))) : righe;
+    return `<div class="solo-stampa stampa-parte"><div class="stampa-tit">${tit}${tutte.length>1?` · ${i?'dal 16':'1–15'}`:''}</div>`
+      +(rp.length?`<div class="griglia">${tabellaCand(parte,rp,nScelte)}</div>`:'<p class="note">Nessun candidato in questi giorni.</p>')
+      +'<p class="note">✓ = candidato · ★ = in squadra · in alto candidati/posti del turno.</p></div>';
+  }).join('');
+  m.innerHTML=h;
+  document.body.classList.toggle('tab-full', !!S.tabFull);
+}
+function tabellaCand(turniV,righe,nScelte){
+  let h='<table><thead><tr><th class="nome">Collaboratore</th>'+turniV.map(t=>{
     const [y,mm,g]=t.data.split('-').map(Number); const wd=new Date(y,mm-1,g).toLocaleDateString('it-IT',{weekday:'short'});
     const nc=S.cand.filter(k=>k.turno_id===t.id).length, posti=(t.fotografi||0)+(t.stampatori||0);
     return `<th class="ev">${wd} ${g}<div class="pisc">${nScelte>1?esc((piscinaById(t.piscina_id)||{nome:'?'}).nome)+'<br>':''}<span class="ore">${hm(t.ora_inizio)}–${hm(t.ora_fine)}</span><br><span class="${nc>=posti?'pieno':'manca'}">${nc}/${posti}</span></div></th>`;
@@ -1811,12 +1836,28 @@ function vistaDisp(){
     const nc=S.cand.filter(k=>k.turno_id===t.id).length, posti=(t.fotografi||0)+(t.stampatori||0);
     return `<td class="${nc>=posti?'pieno':'manca'}">${nc}</td>`;
   }).join('')+'</tr>';
-  m.innerHTML=h+'</tbody></table></div><p class="note">✓ = candidato · ★ = in squadra · in alto i candidati sui posti del turno.</p>';
+  return h+'</tbody></table>';
 }
 function filtroCand(v){ S.soloCand=v; vistaDisp(); }
-// stampa il mese intero in orizzontale (vedi @media print): si nasconde tutto tranne la tabella
+// stampa il mese in orizzontale, in due fogli (vedi @media print): si nasconde tutto tranne le tabelle
 function stampaCand(){ document.body.classList.add('stampa-cand'); window.print(); }
 window.addEventListener('afterprint', ()=>document.body.classList.remove('stampa-cand'));
+// schermo intero: solo la tabella; sul telefono prova anche a girare lo schermo in orizzontale
+async function schermoCand(on){
+  S.tabFull=on; document.body.classList.toggle('tab-full',on);
+  const el=document.documentElement;
+  try{
+    if(on){
+      if(el.requestFullscreen && !document.fullscreenElement) await el.requestFullscreen();
+      if(screen.orientation && screen.orientation.lock) await screen.orientation.lock('landscape').catch(()=>{});
+    } else {
+      if(screen.orientation && screen.orientation.unlock) screen.orientation.unlock();
+      if(document.fullscreenElement) await document.exitFullscreen();
+    }
+  }catch(e){}
+}
+// uscendo dallo schermo intero con il tasto indietro del telefono si chiude anche la vista
+document.addEventListener('fullscreenchange', ()=>{ if(!document.fullscreenElement && S.tabFull){ S.tabFull=false; document.body.classList.remove('tab-full'); } });
 // sedi tolte dal filtro (si ricordano anche cambiando mese; una sede nuova si vede finché non la togliete)
 // testo bianco sui colori scuri, quasi nero su quelli chiari (es. giallo, verde lime): si legge sempre
 function testoSu(hex){
