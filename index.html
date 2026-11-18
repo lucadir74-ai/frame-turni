@@ -88,6 +88,8 @@ main{max-width:1100px;margin:0 auto;padding:16px}
 #dlg .turno.pubb{border:2px solid var(--water);background:#FFF7FB;border-radius:10px;padding:10px}
 #dlg .turno.bozza{border:1px dashed var(--line);border-radius:10px;padding:10px}
 .ritiri{background:#FBE9EA;border:1px solid #F0C4C7;border-radius:10px;padding:10px 14px;margin:0 0 14px;color:var(--red)}
+.attese{background:#FFF6D6;border:1px solid #F0D98A;border-radius:10px;padding:10px 14px;margin:0 0 14px}
+.attese .rit{margin-top:6px}
 .ritiri .rit{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:6px;color:var(--ink)}
 .griglia .fx button.sq{border-color:var(--water);background:var(--water);color:#fff}
 .griglia .pisc .pieno{color:var(--ok);font-weight:700}
@@ -590,8 +592,13 @@ function vistaTurni(){
   // su telefono i bottoni secondari stanno in "Altre azioni", su computer si vedono tutti
   let h = barraMese(`<div class="altre"><button type="button" class="btn altre-t" onclick="this.parentNode.classList.toggle('on')" aria-label="Altre azioni">Altre azioni ▾</button><div class="altre-b" onclick="this.parentNode.classList.remove('on')">
     <button class="btn" onclick="formLinkCalendario()">Link calendario</button><button class="btn" ${bozze?'':'disabled'} onclick="formProponi(false)">Proponi squadre</button><button class="btn" ${bozze?'':'disabled'} onclick="pubblicaMese()">Pubblica ${bozze||''} squadre del mese</button><button class="btn" onclick="formModificaBlocco()">Modifica più turni</button></div></div><button class="btn pri" onclick="formTurno()">Nuovo evento</button>`);
-  if(S.ritiri && S.ritiri.length) h+='<div class="ritiri"><b>Ritiri da gestire</b>'+S.ritiri.map(r=>{const t=r.tp_turni||{}; const c=collabById(r.collaboratore_id)||{nome:'?'};
-    return `<div class="rit"><span>${esc(c.nome)} si è ritirato/a da <b>${esc((piscinaById(t.piscina_id)||{nome:'?'}).nome)}</b>, ${t.data?nomeGiorno(t.data):''} ${hm(t.ora_inizio)}–${hm(t.ora_fine)}: era in squadra, il posto è scoperto.</span><button class="btn pic" onclick="ritiroVisto('${r.id}')">Visto</button></div>`}).join('')+'</div>';
+  if(S.ritiri && S.ritiri.length) h+='<div class="ritiri"><b>Ritiri e rifiuti da gestire</b>'+S.ritiri.map(r=>{const t=r.tp_turni||{}; const c=collabById(r.collaboratore_id)||{nome:'?'};
+    const cosa = r.tipo==='rifiuto' ? 'ha rifiutato il turno' : 'si è ritirato/a da';
+    return `<div class="rit"><span>${esc(c.nome)} ${cosa} <b>${esc((piscinaById(t.piscina_id)||{nome:'?'}).nome)}</b>, ${t.data?nomeGiorno(t.data):''} ${hm(t.ora_inizio)}–${hm(t.ora_fine)}: era in squadra, il posto è scoperto.</span><button class="btn pic" onclick="ritiroVisto('${r.id}')">Visto</button></div>`}).join('')+'</div>';
+  const sr=senzaRisposta();
+  if(sr.length) h+='<div class="attese"><b>Non hanno ancora risposto (da più di 24 ore)</b>'+sr.map(({a,t})=>{ const c=collabById(a.collaboratore_id)||{nome:'?'};
+    return `<div class="rit"><span>${esc(c.nome)} · <b>${esc((piscinaById(t.piscina_id)||{nome:'?'}).nome)}</b>, ${nomeGiorno(t.data)} ${hm(t.ora_inizio)}–${hm(t.ora_fine)}</span></div>`; }).join('')
+    +'<div class="azioni" style="margin-top:8px"><button class="btn pic pri" onclick="avvisaSenzaRisposta()">Riscrivi su WhatsApp</button></div></div>';
   if(!S.piscine.some(p=>p.attiva)){ m.innerHTML=h+'<div class="vuoto">Prima inserisci le sedi nella scheda Sedi, poi potrai creare gli eventi.</div>'; return; }
   const eventi=[...(S.eventi||[])].sort((x,y)=>x.data_inizio.localeCompare(y.data_inizio));
   const senza=S.turni.filter(t=>!t.evento_id || !eventi.some(e=>e.id===t.evento_id));
@@ -619,7 +626,7 @@ function cardEvento(e, turni){
     <div class="ev-stat"><span>${turni.length} turni questo mese</span>${validi.length?`<span class="${coperti>=validi.length?'pieno':'manca'}">candidati sufficienti ${coperti}/${validi.length}</span><span>squadre pubblicate ${pubb}/${validi.length}</span>`:''}${ann?`<span class="ko">annullati ${ann}</span>`:''}</div>
     <div class="azioni"><button class="btn pic ${aperto?'':'pri'}" onclick="apriEvento('${key}',${!aperto})">${aperto?'Nascondi turni':'Mostra turni'}</button>
       ${e && validi.length>pubb?`<button class="btn pic pri" onclick="pubblicaEvento('${e.id}')">Pubblica squadre (${validi.length-pubb})</button>`:''}
-      ${e && pubb?`<button class="btn pic" onclick="ritiraEvento('${e.id}')">Ritira squadre (${pubb})</button>`:''}
+      ${e && pubb?`<button class="btn pic" onclick="avvisaEvento('${e.id}')">Avvisa su WhatsApp</button><button class="btn pic" onclick="ritiraEvento('${e.id}')">Ritira squadre (${pubb})</button>`:''}
       ${e?`<button class="btn pic ${e.mostra_colleghi?'pri':''}" aria-pressed="${!!e.mostra_colleghi}" title="Se acceso, chi è in squadra vede chi lavora con lui quel giorno" onclick="colleghiEvento('${e.id}')">Colleghi visibili: ${e.mostra_colleghi?'sì':'no'}</button>`:''}
       ${e?`<button class="btn pic" onclick="apriCalEvento('${e.id}')">Calendario posti</button><button class="btn pic" onclick="formEvento('${e.id}')">Modifica evento</button><details class="menu"><summary class="btn pic" aria-label="Altre azioni">⋯</summary><div class="menu-b"><button class="btn pic del" onclick="eliminaEvento('${e.id}')">Elimina evento</button></div></details>`:''}</div>`;
   if(aperto && turni.length) h+='<div class="ev-giorni">'+[...new Set(turni.map(t=>t.data))].map(g=>{
@@ -1289,12 +1296,91 @@ async function eliminaTurno(id){
   if(errore((await sb.from('tp_turni').delete().eq('id',id)).error)) return;
   toast('Turno eliminato.'); ricarica();
 }
-async function pubblica(id,val){ if(errore((await sb.from('tp_turni').update({pubblicato:val}).eq('id',id)).error)) return; toast(val?'Squadra pubblicata.':'Squadra ritirata: i collaboratori non la vedono più.'); ricarica(); }
+// pubblica i turni scelti da "filtro" e segna quando (serve per l'avviso "non ha risposto da 24 ore").
+// Restituisce gli id pubblicati. Se nel database manca ancora la colonna pubblicato_il, pubblica e basta.
+async function pubblicaDb(filtro){
+  let r=await filtro(sb.from('tp_turni').update({pubblicato:true, pubblicato_il:new Date().toISOString()})).select('id');
+  if(r.error && /pubblicato_il/i.test(r.error.message||'')) r=await filtro(sb.from('tp_turni').update({pubblicato:true})).select('id');
+  if(errore(r.error)) return null;
+  return (r.data||[]).map(x=>x.id);
+}
+async function pubblica(id,val){
+  if(!val){ if(errore((await sb.from('tp_turni').update({pubblicato:false}).eq('id',id)).error)) return; toast('Squadra ritirata: i collaboratori non la vedono più.'); ricarica(); return; }
+  const ids=await pubblicaDb(q=>q.eq('id',id)); if(!ids) return;
+  toast('Squadra pubblicata.'); await ricarica(); formAvvisi(ids);
+}
 async function pubblicaEvento(id){
   const e=(S.eventi||[]).find(x=>x.id===id); if(!e) return;
   if(!confirm('Pubblicare le squadre di tutti i turni di “'+e.nome+'”? I collaboratori vedranno chi è in squadra.')) return;
-  if(errore((await sb.from('tp_turni').update({pubblicato:true}).eq('evento_id',id).eq('pubblicato',false).eq('annullato',false)).error)) return;
-  toast('Squadre dell\'evento pubblicate.'); ricarica();
+  const ids=await pubblicaDb(q=>q.eq('evento_id',id).eq('pubblicato',false).eq('annullato',false)); if(!ids) return;
+  toast('Squadre dell\'evento pubblicate.'); await ricarica(); formAvvisi(ids);
+}
+
+// ---------- AVVISI WHATSAPP A CHI È IN SQUADRA ----------
+// Dopo la pubblicazione: una riga per persona con il messaggio già scritto (tutti i suoi turni appena pubblicati)
+// e il link a "I miei turni", dove accetta o rifiuta. Il WhatsApp parte dal telefono di chi lo tocca: basta premere invia.
+const linkMieiTurni = () => new URL('calendario.html?vista=miei', location.href).href;
+function testoAvviso(c, righe){
+  const r = x => { const p=piscinaById(x.t.piscina_id)||{nome:'?'};
+    return '• '+nomeGiorno(x.t.data)+', '+hm(x.t.ora_inizio)+'–'+hm(x.t.ora_fine)+' · '+p.nome+(p.indirizzo?' ('+p.indirizzo+')':'')+' · '+(x.a.ruolo==='F'?'foto':'stampa'); };
+  return 'Ciao '+c.nome.split(' ')[0]+'! Sei in squadra:\n'+righe.map(r).join('\n')
+    +'\n\nApri il calendario e tocca Accetto (oppure Non posso, se non riesci): '+linkMieiTurni();
+}
+async function formAvvisi(ids){
+  if(!ids || !ids.length) return;
+  const oggiS=oggi(), tur=[], ass=[];
+  for(let i=0;i<ids.length;i+=100){
+    const p=ids.slice(i,i+100);
+    const [t,a]=await Promise.all([sb.from('tp_turni').select('*').in('id',p), sb.from('tp_assegnazioni').select('*').in('turno_id',p)]);
+    if(errore(t.error)||errore(a.error)) return;
+    tur.push(...t.data); ass.push(...a.data);
+  }
+  // per persona: i suoi turni pubblicati, da oggi in poi
+  const pers={};
+  for(const a of ass){ const t=tur.find(x=>x.id===a.turno_id); if(!t || t.annullato || !t.pubblicato || t.data<oggiS) continue;
+    (pers[a.collaboratore_id]=pers[a.collaboratore_id]||[]).push({a,t}); }
+  const lista=Object.entries(pers).map(([cid,r])=>({ c:collabById(cid)||{id:cid,nome:'?'}, r:r.sort((x,y)=>x.t.data.localeCompare(y.t.data)||hm(x.t.ora_inizio).localeCompare(hm(y.t.ora_inizio))) }))
+    .sort((x,y)=>x.c.nome.localeCompare(y.c.nome));
+  S.avvisi=lista;
+  if(!lista.length){ toast('Nessuno in squadra da avvisare in questi turni.'); return; }
+  apriDialog('Avvisa la squadra', `<p class="note" style="margin:0 0 10px">Tocca <b>WhatsApp</b> su ogni persona: si apre il messaggio già scritto, con i suoi turni e il link per accettare. Tu premi solo invia.</p>
+    <div id="avv"></div>`, null, null, 'Fatto');
+  renderAvvisi();
+}
+function renderAvvisi(){
+  const box=document.getElementById('avv'); if(!box) return;
+  box.innerHTML=S.avvisi.map((x,i)=>{ const n=telefonoWa(x.c.telefono);
+    const mandato=x.r.every(y=>y.a.avvisato_il), si=x.r.every(y=>y.a.risposta==='si');
+    const stato = si ? '<span class="ok">✅ ha accettato</span>' : mandato ? '✉ WhatsApp mandato · in attesa di risposta' : '';
+    return `<div class="cand"><span class="n">${esc(x.c.nome)}</span>
+      <span class="b">${n?`<a class="btn pic ${mandato?'':'pri'}" style="text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/${n}?text=${encodeURIComponent(testoAvviso(x.c,x.r))}" onclick="segnaAvvisato(${i})">WhatsApp</a>`:''}</span>
+      <span class="d">${x.r.map(y=>esc(nomeGiorno(y.t.data)+' '+hm(y.t.ora_inizio)+'–'+hm(y.t.ora_fine)+' · '+((piscinaById(y.t.piscina_id)||{nome:'?'}).nome))).join('<br>')}
+        ${stato?'<br>'+stato:''}${n?'':'<br><span class="ko">Nessun telefono nella scheda</span>'}</span></div>`; }).join('');
+}
+async function segnaAvvisato(i){
+  const x=S.avvisi[i]; if(!x) return;
+  const quando=new Date().toISOString();
+  x.r.forEach(y=>y.a.avvisato_il=quando); setTimeout(renderAvvisi,300);
+  const r=await sb.from('tp_assegnazioni').update({avvisato_il:quando}).in('id',x.r.map(y=>y.a.id));
+  if(r.error) console.warn(r.error);   // senza lo script SQL la colonna non c'è: l'avviso parte lo stesso
+  x.r.forEach(y=>{ const a=S.ass.find(z=>z.id===y.a.id); if(a) a.avvisato_il=quando; });
+}
+// avvisi dei turni pubblicati di un evento, da oggi in poi (anche dei mesi non visualizzati)
+async function avvisaEvento(id){
+  const r=await sb.from('tp_turni').select('id').eq('evento_id',id).eq('pubblicato',true).eq('annullato',false).gte('data',oggi());
+  if(errore(r.error)) return;
+  formAvvisi(r.data.map(x=>x.id));
+}
+// chi è in una squadra pubblicata e non ha risposto da più di 24 ore (solo con il database aggiornato)
+function senzaRisposta(){
+  const lim=Date.now()-24*3600*1000, o=oggi();
+  return S.ass.filter(a=>('risposta' in a) && a.risposta!=='si').map(a=>({a, t:S.turni.find(x=>x.id===a.turno_id)}))
+    .filter(({a,t})=>t && t.pubblicato && !t.annullato && t.data>=o && t.pubblicato_il
+      && Math.max(Date.parse(t.pubblicato_il), Date.parse(a.creato||t.pubblicato_il)) < lim);
+}
+function avvisaSenzaRisposta(){
+  const l=senzaRisposta(); if(!l.length) return;
+  formAvvisi([...new Set(l.map(x=>x.t.id))]);
 }
 // interruttore dell'evento: se acceso, nel calendario chi è in squadra vede chi lavora con lui quel giorno; se spento vede solo i propri turni
 async function colleghiEvento(id){
@@ -1417,8 +1503,8 @@ function disegnaRiepilogo(){
 async function pubblicaMese(){
   const [da,a]=limitiMese(S.mese);
   if(!confirm('Pubblicare le squadre di tutti i turni di '+nomeMese(S.mese)+' non ancora pubblicati? I collaboratori vedranno chi è in squadra.')) return;
-  if(errore((await sb.from('tp_turni').update({pubblicato:true}).gte('data',da).lte('data',a).eq('pubblicato',false)).error)) return;
-  toast('Turni pubblicati.'); ricarica();
+  const ids=await pubblicaDb(q=>q.gte('data',da).lte('data',a).eq('pubblicato',false)); if(!ids) return;
+  toast('Turni pubblicati.'); await ricarica(); formAvvisi(ids);
 }
 async function togli(assId){ if(errore((await sb.from('tp_assegnazioni').delete().eq('id',assId)).error)) return; ricarica(); }
 
@@ -1714,7 +1800,10 @@ function elencoPersone(t){
       // piscine: chi è già in squadra in un'altra sede alla stessa ora resta candidato qui, ma in grigio e senza pulsanti
       const fuori = !a && nasc && giaInSquadraAltrove(c.id,t);
       if(fuori) return `<div class="gcr fuori"><div class="gcn"><b>${esc(c.nome)}</b> ${info}<div class="note">In squadra a <b>${esc((piscinaById(fuori.piscina_id)||{nome:'?'}).nome)}</b> ${hm(fuori.ora_inizio)}–${hm(fuori.ora_fine)}</div></div></div>`;
-      const sq = a ? `<div class="note">In squadra come <b>${a.ruolo==='F'?'foto':'stampa'}</b>${cand?'':' (non candidato)'}</div>` : '';
+      // a squadra pubblicata: la risposta del ragazzo (solo con il database aggiornato) e se il WhatsApp è partito
+      const risp = a && t.pubblicato && ('risposta' in a)
+        ? ' · '+(a.risposta==='si' ? '<span class="ok">✅ ha accettato</span>' : '⏳ in attesa di risposta')+(a.avvisato_il?' · ✉ avvisato':'') : '';
+      const sq = a ? `<div class="note">In squadra come <b>${a.ruolo==='F'?'foto':'stampa'}</b>${cand?'':' (non candidato)'}${risp}</div>` : '';
       const bott = a
         ? `<button type="button" class="btn pic del" onclick="togliSquadraGC('${a.id}')">Togli dalla squadra</button>`
         : (c.ruolo!=='S'?`<button type="button" class="btn pic" onclick="assegnaGC('${t.id}','${c.id}','F')">Foto</button>`:'')
@@ -1741,7 +1830,7 @@ function renderGC(){
       <div class="note">Servono ${t.fotografi} foto + ${t.stampatori} stampa · candidati <b>${k.length}</b>${nFuori?' (di cui '+nFuori+' già in squadra altrove)':''} · in squadra <b class="${nF>=t.fotografi&&nS>=t.stampatori?'okc':'koc'}">${ass.length}/${posti}</b> (foto ${nF}/${t.fotografi}, stampa ${nS}/${t.stampatori})</div>
       ${t.annullato?'':`${elencoPersone(t)}
       <div class="gca" style="margin-top:8px">${t.pubblicato
-        ? `<button type="button" class="btn pic" onclick="pubblicaGC('${t.id}',false)">Ritira la pubblicazione</button>`
+        ? `<button type="button" class="btn pic pri" ${ass.length?'':'disabled'} onclick="chiudiDialog(); formAvvisi(['${t.id}'])">Avvisa su WhatsApp</button><button type="button" class="btn pic" onclick="pubblicaGC('${t.id}',false)">Ritira la pubblicazione</button>`
         : `<button type="button" class="btn pic pri" ${ass.length?'':'disabled'} onclick="pubblicaGC('${t.id}',true)">Pubblica squadra</button>`}
         <button type="button" class="btn pic" onclick="chiudiDialog(); formAssegna('${t.id}')">Tutti i collaboratori</button></div>`}
       <div class="gca" style="margin-top:6px"><button type="button" class="btn pic" onclick="chiudiDialog(); formTurno('${t.id}')">Modifica data e orari</button></div>
@@ -1770,8 +1859,9 @@ async function ritiraCandGC(cid,tid){
 }
 async function pubblicaGC(tid,val){
   if(!val && !confirm('Ritirare la pubblicazione? I collaboratori non vedranno più questa squadra. Le assegnazioni restano.')) return;
-  if(errore((await sb.from('tp_turni').update({pubblicato:val}).eq('id',tid)).error)) return;
-  toast(val?'Squadra pubblicata.':'Pubblicazione ritirata.');
+  if(val){ if(!await pubblicaDb(q=>q.eq('id',tid))) return; }
+  else if(errore((await sb.from('tp_turni').update({pubblicato:false}).eq('id',tid)).error)) return;
+  toast(val?'Squadra pubblicata. Ora avvisala con “Avvisa su WhatsApp”.':'Pubblicazione ritirata.');
   await aggiornaDopo();
 }
 // togliere una candidatura chiede due conferme (dalla griglia e dalla finestra del giorno): è facile toccare per sbaglio

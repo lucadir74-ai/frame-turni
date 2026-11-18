@@ -73,6 +73,13 @@ main{max-width:640px;margin:0 auto;padding:16px}
 .az .btnpri{padding:10px}
 .az .btnsec{padding:10px}
 .stato-io{font-weight:700;color:var(--ok)}
+.stato-io.attesa{color:var(--ink);margin-bottom:8px}
+.risp{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.risp .btnsec{margin-top:0;border-style:solid}
+.btnlink{background:none;border:0;padding:6px 0 0;color:var(--muted);text-decoration:underline;font:inherit;font-size:.88rem}
+.daconf{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;background:#FFF6D6;border:1px solid #F0D98A;border-radius:12px;padding:10px 14px;margin:0 0 12px}
+.daconf span{font-size:.9rem}
+.daconf button{background:var(--water);color:#fff;border:0;border-radius:8px;padding:8px 16px;font-weight:600}
 .note48{font-size:.88rem;color:var(--muted);margin:6px 0 8px}
 .btnwa{display:block;text-align:center;background:#1F8F4E;color:#fff;border-radius:10px;padding:11px;font-weight:600;text-decoration:none}
 .velo{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:20px;z-index:20}
@@ -126,7 +133,7 @@ let sb=null; const S={ tutti:[], turni:[], io:null, vista:'cal', sede:null, mese
 const AMBITI = { tutto:'Tutto', christmas:'Christmas', piscine:'Piscine' };
 function ambitoDi(t){ return t.visibile ? 'christmas' : 'piscine'; }
 function leggiAmbito(){
-  let v=null; try{ v=new URLSearchParams(location.search).get('solo'); }catch(e){}
+  let v=null; try{ const q=new URLSearchParams(location.search); v=q.get('solo'); if(q.get('vista')==='miei') S.vista='miei'; }catch(e){}
   if(v && AMBITI[v]){ try{ localStorage.setItem(CHIAVE_AMBITO,v); }catch(e){} return v; }
   try{ v=localStorage.getItem(CHIAVE_AMBITO); }catch(e){ v=null; }
   return AMBITI[v] ? v : 'tutto';
@@ -280,14 +287,23 @@ function descrTurno(t){ return t.piscina+', '+nomeGiorno(t.data)+', '+hm(t.ora_i
 function linkWa(testo){ return 'https://wa.me/'+WA_ORG+'?text='+encodeURIComponent(testo); }
 function posti(t){ const p=[]; if(t.fotografi) p.push(t.fotografi+' foto'); if(t.stampatori) p.push(t.stampatori+' stampa'); return p.join(' + ')||'—'; }
 
+// turni in cui sono in squadra e non ho ancora risposto (solo con il database aggiornato: campo mia_risposta)
+function daConfermare(){ return S.tutti.filter(t=>t.mia_risposta==='attesa' && inSquadra(t) && t.pubblicato && !t.annullato && oreAlTurno(t)>0); }
+function avvisoConferma(){
+  const n=daConfermare().length; if(!n) return '';
+  return `<div class="daconf"><b>${n===1?'Hai 1 turno da confermare':'Hai '+n+' turni da confermare'}</b>`
+    + (S.vista==='miei' ? '<span>Tocca <b>Accetto</b> o <b>Non posso</b> qui sotto.</span>' : `<button onclick="vai('miei')">Vedi</button>`)+'</div>';
+}
+
 function vistaTurni(){
   const m=document.getElementById('main');
-  const sedi=[...new Set(S.turni.map(t=>t.piscina))].sort();
+  const base = S.vista==='miei' ? S.tutti : S.turni;   // "I miei turni" mostra sempre tutto, Christmas e piscine
+  const sedi=[...new Set(base.map(t=>t.piscina))].sort();
   if(S.sede && !sedi.includes(S.sede)) S.sede=null;
-  let lista = S.turni.filter(t=> !S.sede || t.piscina===S.sede);
+  let lista = base.filter(t=> !S.sede || t.piscina===S.sede);
   if(S.vista==='miei'){ const o=oggiStr(); lista=lista.filter(t=>mio(t) && t.data>=o); }
   lista=[...lista].sort((x,y)=>x.data.localeCompare(y.data)||hm(x.ora_inizio).localeCompare(hm(y.ora_inizio)));
-  let h = tastiAmbito() + (S.vista==='miei'
+  let h = (S.vista==='miei' ? '' : tastiAmbito()) + avvisoConferma() + (S.vista==='miei'
     ? '<p class="intro">I turni da oggi in poi a cui ti sei candidato e quelli in cui sei in squadra.</p>'
     : '<p class="intro">Tocca <b>Mi candido</b> sui turni che puoi fare. La squadra la scelgono gli organizzatori e, quando è pubblicata, la trovi qui.</p>');
   if(sedi.length>1) h+='<div class="sedi"><button aria-current="'+(!S.sede)+'" onclick="filtraSede(null)">Tutte</button>'+sedi.map(n=>`<button aria-current="${S.sede===n}" onclick='filtraSede(${JSON.stringify(n).replace(/'/g,"&#39;")})'>${esc(n)}</button>`).join('')+'</div>';
@@ -306,8 +322,17 @@ function scheda(t){
   // libero = entro 48 ore ma solo candidato e la squadra è già pubblicata senza di lui: può togliersi da solo
   const ore=oreAlTurno(t), libero = !sq && t.pubblicato;
   let azione='';
+  const conRisposta = sq && t.pubblicato && t.mia_risposta!=null;   // database aggiornato: si accetta o si rifiuta
+  const waBetty = `<a class="btnwa" target="_blank" rel="noopener" href="${linkWa('Ciao Betty, sono '+S.io.nome+'. Non riesco a fare il turno '+descrTurno(t)+': puoi togliermi?')}">Scrivi a Betty su WhatsApp</a>`;
   if(t.annullato) azione='';
   else if(ore<=0) azione=`<p class="note48">${t.data<oggiStr()?'Turno concluso.':'Turno già iniziato.'}${sq?' Eri in squadra.':''}</p>`;
+  else if(conRisposta && t.mia_risposta==='attesa') azione = `<div class="stato-io attesa">Sei in squadra: confermi il turno?</div>`
+    + `<div class="risp"><button class="btnpri" onclick="rispondi('${t.id}',true)">Accetto</button>`
+    + (ore>48 ? `<button class="btnsec" onclick="rispondi('${t.id}',false)">Non posso</button></div>`
+              : `</div><p class="note48">Mancano meno di 48 ore: se non puoi, avvisa Betty.</p>${waBetty}`);
+  else if(conRisposta) azione = `<div class="stato-io">✓ Turno confermato</div>`
+    + (ore>48 ? `<button class="btnlink" onclick="rispondi('${t.id}',false)">Non posso più farlo</button>`
+              : `<p class="note48">Mancano meno di 48 ore: se non puoi più, avvisa Betty.</p>${waBetty}`);
   else if(!cand && !sq) azione=`<button class="btnpri" onclick="candida('${t.id}',true)">Mi candido</button>`;
   else if(ore>48 || libero) azione=`<div class="stato-io">✓ ${sq?'Sei in squadra':'Ti sei candidato'}</div>`
     + '<p class="note48">Per toglierti ritocca il turno nel Calendario.</p>';
@@ -343,7 +368,7 @@ function vistaCal(){
   const [y,mm]=S.mese.split('-').map(Number);
   const nomeM=new Date(y,mm-1,1).toLocaleDateString('it-IT',{month:'long',year:'numeric'});
   const sedi=[]; S.turni.filter(t=>t.data.slice(0,7)===S.mese).forEach(t=>{ if(!sedi.some(x=>x.n===t.piscina)) sedi.push({n:t.piscina,c:coloreT(t)}); });
-  let h=tastiAmbito()+`<div class="mesebar"><button onclick="cambiaMeseCal(-1)" ${S.mese<=mesi[0]?'disabled':''} aria-label="Mese precedente">‹</button><h2>${nomeM}</h2><button onclick="cambiaMeseCal(1)" ${S.mese>=mesi[mesi.length-1]?'disabled':''} aria-label="Mese successivo">›</button></div>`;
+  let h=tastiAmbito()+avvisoConferma()+`<div class="mesebar"><button onclick="cambiaMeseCal(-1)" ${S.mese<=mesi[0]?'disabled':''} aria-label="Mese precedente">‹</button><h2>${nomeM}</h2><button onclick="cambiaMeseCal(1)" ${S.mese>=mesi[mesi.length-1]?'disabled':''} aria-label="Mese successivo">›</button></div>`;
   h+='<div class="legenda">'+sedi.map(x=>`<span><i style="background:${x.c}"></i>${esc(x.n)}</span>`).join('')+'<span style="color:var(--muted)">'+['M = mattina','P = pomeriggio','G = tutto il giorno'].filter(x=>S.turni.some(t=>t.data.slice(0,7)===S.mese && fasciaDi(t)===x[0])).join(' · ')+'</span></div>';
   h+='<div class="cal">'+['L','M','M','G','V','S','D'].map(x=>`<div class="wd">${x}</div>`).join('');
   const primo=new Date(y,mm-1,1), ult=new Date(y,mm,0).getDate(), vuoti=(primo.getDay()+6)%7, oggi=oggiStr();
@@ -368,6 +393,7 @@ async function tocco(id){
   const t=S.turni.find(x=>x.id===id);
   if(t.annullato){ toast('Turno annullato'+(t.motivo?' ('+t.motivo+')':'')+'.'); return; }
   if(oreAlTurno(t)<=0){ toast(t.data<oggiStr()?'Turno concluso.':'Turno già iniziato.'); return; }
+  if(inSquadra(t) && t.pubblicato && t.mia_risposta!=null) return apriGiorno(t.data);   // dal dettaglio si accetta o si rifiuta
   if(!mio(t)) return candida(id,true);
   if(oreAlTurno(t)<=48 && !(t.pubblicato && !inSquadra(t))) return apriGiorno(t.data);   // meno di 48 ore: nel dettaglio c'è il messaggio per Betty
   return candida(id,false,!inSquadra(t));   // chi è già in squadra conferma prima di togliersi, poi avvisa Betty
@@ -432,6 +458,15 @@ async function candida(id,si,veloce){
   if(si) toast('Candidatura inviata.');
   else if(data && data.era_in_squadra) avvisoRitiro(t);
   else toast('Candidatura ritirata.');
+}
+// Accetto / Non posso sul turno in cui si è in squadra (funzione tp_pub_risposta del database)
+async function rispondi(id,si){
+  const t=S.tutti.find(x=>x.id===id); if(!t) return;
+  if(!si && !confirm('Non puoi fare il turno '+descrTurno(t)+'?\n\nEsci dalla squadra e il posto torna libero per un altro collega. Confermi?')) return;
+  const { error } = await sb.rpc('tp_pub_risposta', { p_collab:S.io.id, p_turno:id, p_si:si });
+  if(error){ toast(error.message||'Non salvato, riprova.',true); await ricarica(); aggiorna(); return; }
+  const y=window.scrollY; await ricarica(); aggiorna(); window.scrollTo(0,y);
+  toast(si ? 'Turno confermato. Grazie!' : 'Fatto: sei uscito dalla squadra. Gli organizzatori sono avvisati.');
 }
 function avvisoRitiro(t){
   const d=document.createElement('div'); d.className='velo';
