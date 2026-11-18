@@ -1406,18 +1406,25 @@ function blocchiGruppo(lista){
   const gruppi = giorni.length>7 ? Object.values(tt.reduce((o,x)=>{ (o[lunedi(x.t.data)]=o[lunedi(x.t.data)]||[]).push(x); return o; },{})) : [tt];
   return gruppi.map(g=>({ turni:g, testo:testoGruppo(g), dal:g[0].t.data, al:g[g.length-1].t.data }));
 }
+// impaginazione pensata per WhatsApp: un blocco per giorno, sede e orario su una riga, foto e stampa su righe separate.
+// Gli orari sono scritti "dalle 10:00 alle 20:00": con il trattino WhatsApp scambiava "00–20" per un numero di telefono.
 function testoGruppo(turni){
-  const breve=n=>String(n||'?').trim();
-  let h='📅 *Squadre*\n', giorno='';
+  const nomi=(ass,f)=>ass.filter(x=>(x.a.ruolo==='F')===f).map(x=>String(x.c.nome||'?').trim()).join(', ');
+  const tit=d=>nomeGiorno(d).replace(/^./,c=>c.toUpperCase());
+  const primo=turni[0].t.data, ult=turni[turni.length-1].t.data;
+  const breveG=d=>{ const [y,m,g]=d.split('-').map(Number); return new Date(y,m-1,g).toLocaleDateString('it-IT',{day:'numeric',month:'long'}); };
+  let h='*SQUADRE* · '+(primo===ult?breveG(primo):breveG(primo)+' – '+breveG(ult))+'\n', giorno='';
   const sedi=new Map();
   turni.forEach(({t,ass})=>{
-    if(t.data!==giorno){ giorno=t.data; h+='\n*'+nomeGiorno(t.data).replace(/^./,c=>c.toUpperCase())+'*\n'; }
+    if(t.data!==giorno){ giorno=t.data; h+='\n━━━━━━━━━━\n*'+tit(t.data)+'*\n'; }
     const p=piscinaById(t.piscina_id)||{nome:'?'}; if(p.indirizzo) sedi.set(p.nome,p.indirizzo);
-    const f=ass.filter(x=>x.a.ruolo==='F').map(x=>breve(x.c.nome)), st=ass.filter(x=>x.a.ruolo!=='F').map(x=>breve(x.c.nome));
-    h+='• '+p.nome+' '+hm(t.ora_inizio)+'–'+hm(t.ora_fine)+(f.length?' · 📷 '+f.join(', '):'')+(st.length?' · 🖨 '+st.join(', '):'')+'\n';
+    const f=nomi(ass,true), st=nomi(ass,false);
+    h+='\n📍 *'+p.nome+'*\n🕙 dalle '+hm(t.ora_inizio)+' alle '+hm(t.ora_fine)+'\n'
+      +(f?'📷 Foto: '+f+'\n':'')+(st?'🖨 Stampa: '+st+'\n':'');
   });
-  if(sedi.size) h+='\n📍 '+[...sedi].map(([n,i])=>n+': '+i).join('\n📍 ')+'\n';
-  return h+'\nAprite il calendario e toccate *Accetto* sui vostri turni (oppure *Non posso*): '+linkMieiTurni();
+  h+='━━━━━━━━━━\n';
+  if(sedi.size) h+='\n*Indirizzi*\n'+[...sedi].map(([n,i])=>'• '+n+': '+i).join('\n')+'\n';
+  return h+'\n👉 Aprite il calendario e toccate *Accetto* sui vostri turni (oppure *Non posso*):\n'+linkMieiTurni();
 }
 function renderAvvisiGruppo(){
   const box=document.getElementById('avg'); if(!box) return;
