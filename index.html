@@ -238,6 +238,8 @@ dialog::backdrop{background:rgba(18,48,58,.45)}
 
 .cand{display:grid;grid-template-columns:1fr auto;gap:4px 10px;padding:10px 0;border-bottom:1px solid var(--line);align-items:center}
 .cand .n{font-weight:600}
+.gruppo-box{background:#E7F3EC;border:1px solid #BFE0CB;border-radius:10px;padding:10px 12px}
+.gruppo-box .cand:last-child{border-bottom:0}
 .cand .d{grid-column:1;font-size:.84rem;color:var(--muted)}
 .cand .d .ok{color:var(--ok);font-weight:600}
 .cand .d .ko{color:var(--warn);font-weight:600}
@@ -1385,11 +1387,57 @@ async function formAvvisi(ids){
     .sort((x,y)=>x.c.nome.localeCompare(y.c.nome));
   S.avvisi=lista;
   if(!lista.length){ toast('Nessuno in squadra da avvisare in questi turni.'); return; }
-  apriDialog('Avvisa la squadra', `<p class="note" style="margin:0 0 10px">Tocca <b>WhatsApp</b> su ogni persona: si apre il messaggio già scritto, con i suoi turni e il link per accettare. Tu premi solo invia.</p>
+  S.avvisiGruppo=blocchiGruppo(lista);
+  apriDialog('Avvisa la squadra', `<div class="gruppo-box"><b>Messaggio nel gruppo WhatsApp</b>
+      <p class="note" style="margin:2px 0 8px">Si apre WhatsApp con le squadre già scritte, giorno per giorno: scegli il gruppo dei collaboratori e premi invia. Chi è nel messaggio risulta avvisato.</p>
+      <div id="avg"></div></div>
+    <p class="note" style="margin:14px 0 4px"><b>Oppure in privato</b>, una persona alla volta (comodo per chi non risponde):</p>
     <div id="avv"></div>`, null, null, 'Fatto');
   renderAvvisi();
 }
+// messaggio per il gruppo: i turni raggruppati per giorno, con la squadra di ognuno.
+// Se i giorni sono tanti si divide per settimana (lun–dom), così ogni messaggio resta leggibile e il link non è troppo lungo.
+function blocchiGruppo(lista){
+  const turni={};
+  lista.forEach(x=>x.r.forEach(y=>{ (turni[y.t.id]=turni[y.t.id]||{t:y.t,ass:[]}).ass.push({a:y.a,c:x.c}); }));
+  const tt=Object.values(turni).sort((a,b)=>a.t.data.localeCompare(b.t.data)||hm(a.t.ora_inizio).localeCompare(hm(b.t.ora_inizio))||(piscinaById(a.t.piscina_id)?.nome||'').localeCompare(piscinaById(b.t.piscina_id)?.nome||''));
+  const giorni=[...new Set(tt.map(x=>x.t.data))];
+  const lunedi=d=>{ const [y,m,g]=d.split('-').map(Number); const x=new Date(y,m-1,g); x.setDate(x.getDate()-(x.getDay()+6)%7); return x.getTime(); };
+  const gruppi = giorni.length>7 ? Object.values(tt.reduce((o,x)=>{ (o[lunedi(x.t.data)]=o[lunedi(x.t.data)]||[]).push(x); return o; },{})) : [tt];
+  return gruppi.map(g=>({ turni:g, testo:testoGruppo(g), dal:g[0].t.data, al:g[g.length-1].t.data }));
+}
+function testoGruppo(turni){
+  const breve=n=>String(n||'?').trim();
+  let h='📅 *Squadre*\n', giorno='';
+  const sedi=new Map();
+  turni.forEach(({t,ass})=>{
+    if(t.data!==giorno){ giorno=t.data; h+='\n*'+nomeGiorno(t.data).replace(/^./,c=>c.toUpperCase())+'*\n'; }
+    const p=piscinaById(t.piscina_id)||{nome:'?'}; if(p.indirizzo) sedi.set(p.nome,p.indirizzo);
+    const f=ass.filter(x=>x.a.ruolo==='F').map(x=>breve(x.c.nome)), st=ass.filter(x=>x.a.ruolo!=='F').map(x=>breve(x.c.nome));
+    h+='• '+p.nome+' '+hm(t.ora_inizio)+'–'+hm(t.ora_fine)+(f.length?' · 📷 '+f.join(', '):'')+(st.length?' · 🖨 '+st.join(', '):'')+'\n';
+  });
+  if(sedi.size) h+='\n📍 '+[...sedi].map(([n,i])=>n+': '+i).join('\n📍 ')+'\n';
+  return h+'\nAprite il calendario e toccate *Accetto* sui vostri turni (oppure *Non posso*): '+linkMieiTurni();
+}
+function renderAvvisiGruppo(){
+  const box=document.getElementById('avg'); if(!box) return;
+  const g=S.avvisiGruppo||[], breveG=d=>{ const [y,m,gg]=d.split('-').map(Number); return new Date(y,m-1,gg).toLocaleDateString('it-IT',{day:'numeric',month:'short'}); };
+  box.innerHTML=g.map((x,i)=>{ const tutti=x.turni.flatMap(y=>y.ass), mandato=tutti.every(y=>y.a.avvisato_il);
+    const per = g.length>1 ? (x.dal===x.al?breveG(x.dal):breveG(x.dal)+' – '+breveG(x.al)) : x.turni.length+' turni';
+    return `<div class="cand"><span class="n">${g.length>1?'Settimana ':''}${esc(per)}</span>
+      <span class="b"><a class="btn pic ${mandato?'':'pri'}" style="text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(x.testo)}" onclick="segnaAvvisatoGruppo(${i})">Scrivi nel gruppo</a></span>
+      <span class="d">${x.turni.length} turni · ${new Set(tutti.map(y=>y.c.id)).size} persone${mandato?'<br>✉ mandato nel gruppo':''}</span></div>`; }).join('');
+}
+async function segnaAvvisatoGruppo(i){
+  const x=(S.avvisiGruppo||[])[i]; if(!x) return;
+  const quando=new Date().toISOString(), ass=x.turni.flatMap(y=>y.ass.map(z=>z.a));
+  ass.forEach(a=>a.avvisato_il=quando); setTimeout(renderAvvisi,300);
+  const r=await sb.from('tp_assegnazioni').update({avvisato_il:quando}).in('id',ass.map(a=>a.id));
+  if(r.error) console.warn(r.error);
+  ass.forEach(a=>{ const b=S.ass.find(z=>z.id===a.id); if(b) b.avvisato_il=quando; });
+}
 function renderAvvisi(){
+  renderAvvisiGruppo();
   const box=document.getElementById('avv'); if(!box) return;
   box.innerHTML=S.avvisi.map((x,i)=>{ const n=telefonoWa(x.c.telefono);
     const mandato=x.r.every(y=>y.a.avvisato_il), si=x.r.every(y=>y.a.risposta==='si');
