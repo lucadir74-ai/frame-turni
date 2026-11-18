@@ -152,6 +152,9 @@ main{max-width:1100px;margin:0 auto;padding:16px}
 .sedi button{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:99px;padding:6px 14px;font-weight:600}
 .sedi button[aria-current=true]{background:var(--water);border-color:var(--water);color:#fff}
 .sedi button small{font-weight:500;opacity:.75;margin-left:4px}
+.sedi button.col{border:2px solid var(--c);color:var(--u);background:var(--card);opacity:.75}
+.sedi button.col[aria-current=true]{opacity:1}
+.sedi button.col[aria-current=true]{background:var(--c);border-color:var(--c);color:var(--t)}
 .sedi .sedi-az{display:flex;gap:6px;margin-left:auto}
 .sedi button.az{background:none;border-style:dashed;color:var(--muted);font-weight:500}
 .sedi button.az:disabled{opacity:.4}
@@ -1742,7 +1745,10 @@ function vistaDisp(){
   const nScelte = sediMese.filter(p=>sedeScelta(p.id)).length;
   let h=barraMese('<span class="note">Le candidature le fanno i collaboratori dal calendario; qui potete aggiungerle o toglierle voi.</span>');
   // filtro a scelta multipla: ogni sede si accende e si spegne da sola; "Tutte" le accende tutte, "Nessuna" le spegne tutte
-  if(sediMese.length) h+='<div class="sedi">'+sediMese.map(p=>`<button aria-current="${sedeScelta(p.id)}" onclick="sedeDisp('${p.id}')">${esc(p.nome)}<small>${turniOk.filter(t=>t.piscina_id===p.id).length} turni</small></button>`).join('')
+  // ogni tasto ha il colore della sede (lo stesso della barretta nel calendario): pieno se scelta, solo bordo se tolta
+  if(sediMese.length) h+='<div class="sedi">'+sediMese.map(p=>{ const c=coloreSede(p);
+    return `<button class="col" style="--c:${c};--t:${testoSu(c)};--u:${testoSu(c)==='#fff'?c:'#17181A'}" aria-current="${sedeScelta(p.id)}" onclick="sedeDisp('${p.id}')">${esc(p.nome)}<small>${turniOk.filter(t=>t.piscina_id===p.id).length} turni</small></button>`;
+  }).join('')
     +(sediMese.length>1?`<span class="sedi-az"><button class="az" ${nScelte===sediMese.length?'disabled':''} onclick="sedeDisp('tutte')">Tutte</button><button class="az" ${nScelte?'':'disabled'} onclick="sedeDisp('nessuna')">Nessuna</button></span>`:'')+'</div>';
   if(!turniOk.length){ m.innerHTML=h+'<div class="vuoto">Nessun turno in questo mese. Inserisci prima i turni (sede, data e orario) nella scheda Eventi.</div>'; return; }
   if(!turniV.length){ m.innerHTML=h+'<div class="vuoto">Nessuna sede selezionata: tocca le sedi che vuoi vedere, oppure “Tutte”.</div>'; return; }
@@ -1770,6 +1776,13 @@ function vistaDisp(){
   m.innerHTML=h+'</tbody></table></div><p class="note">✓ = candidato · ★ = in squadra · in alto i candidati sui posti del turno.</p>';
 }
 // sedi tolte dal filtro (si ricordano anche cambiando mese; una sede nuova si vede finché non la togliete)
+// testo bianco sui colori scuri, quasi nero su quelli chiari (es. giallo, verde lime): si legge sempre
+function testoSu(hex){
+  const m=/^#?([0-9a-f]{6})$/i.exec(String(hex||'').trim()); if(!m) return '#fff';
+  const n=parseInt(m[1],16), lin=v=>{ v/=255; return v<=0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055,2.4); };
+  const L=0.2126*lin(n>>16)+0.7152*lin((n>>8)&255)+0.0722*lin(n&255);
+  return L>0.32 ? '#17181A' : '#fff';
+}
 function sedeScelta(id){ return !(S.sediEscluse && S.sediEscluse.has(id)); }
 function sedeDisp(id){
   if(!S.sediEscluse) S.sediEscluse=new Set();
