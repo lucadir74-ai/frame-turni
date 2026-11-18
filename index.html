@@ -240,6 +240,8 @@ dialog::backdrop{background:rgba(18,48,58,.45)}
 .cand .n{font-weight:600}
 .gruppo-box{background:#E7F3EC;border:1px solid #BFE0CB;border-radius:10px;padding:10px 12px}
 .gruppo-box .cand:last-child{border-bottom:0}
+.img-prev{display:flex;gap:8px;overflow-x:auto}
+.img-prev img{display:block;max-height:180px;max-width:100%;border:1px solid var(--line);border-radius:6px;background:#fff}
 .cand .d{grid-column:1;font-size:.84rem;color:var(--muted)}
 .cand .d .ok{color:var(--ok);font-weight:600}
 .cand .d .ko{color:var(--warn);font-weight:600}
@@ -1389,11 +1391,14 @@ async function formAvvisi(ids){
   if(!lista.length){ toast('Nessuno in squadra da avvisare in questi turni.'); return; }
   S.avvisiGruppo=blocchiGruppo(lista);
   apriDialog('Avvisa la squadra', `<div class="gruppo-box"><b>Messaggio nel gruppo WhatsApp</b>
-      <p class="note" style="margin:2px 0 8px">Si apre WhatsApp con le squadre già scritte, giorno per giorno: scegli il gruppo dei collaboratori e premi invia. Chi è nel messaggio risulta avvisato.</p>
+      <p class="note" style="margin:2px 0 8px">Manda la <b>tabella</b> (un'immagine per mese, con il link per accettare) oppure il <b>testo</b> giorno per giorno: scegli il gruppo dei collaboratori e premi invia. Chi è nel messaggio risulta avvisato.</p>
+      <div id="avimg"></div>
+      <p class="note" style="margin:12px 0 0"><b>Come testo</b>:</p>
       <div id="avg"></div></div>
     <p class="note" style="margin:14px 0 4px"><b>Oppure in privato</b>, una persona alla volta (comodo per chi non risponde):</p>
     <div id="avv"></div>`, null, null, 'Fatto');
   renderAvvisi();
+  S.imgSquadre=[]; renderImmagini(); preparaImmagini();
 }
 // messaggio per il gruppo: i turni raggruppati per giorno, con la squadra di ognuno.
 // Se i giorni sono tanti si divide per settimana (lun–dom), così ogni messaggio resta leggibile e il link non è troppo lungo.
@@ -1425,6 +1430,117 @@ function testoGruppo(turni){
   h+='━━━━━━━━━━\n';
   if(sedi.size) h+='\n*Indirizzi*\n'+[...sedi].map(([n,i])=>'• '+n+': '+i).join('\n')+'\n';
   return h+'\n👉 Aprite il calendario e toccate *Accetto* sui vostri turni (oppure *Non posso*):\n'+linkMieiTurni();
+}
+// ---------- TABELLA DELLE SQUADRE COME IMMAGINE (per il gruppo WhatsApp) ----------
+// righe = persone in squadra, colonne = turni; F rosa = foto, S nera = stampa.
+// Un'immagine per mese; se il mese ha più di 16 turni si divide in 1–15 e dal 16, così si legge bene sul telefono.
+function blocchiImmagine(){
+  const tt=[]; const visti=new Set();
+  (S.avvisiGruppo||[]).forEach(g=>g.turni.forEach(x=>{ if(!visti.has(x.t.id)){ visti.add(x.t.id); tt.push(x); } }));
+  const mesi={}; tt.forEach(x=>(mesi[x.t.data.slice(0,7)]=mesi[x.t.data.slice(0,7)]||[]).push(x));
+  return Object.entries(mesi).sort().flatMap(([m,l])=>{
+    if(l.length<=16) return [{mese:m,turni:l,parte:''}];
+    return [{mese:m,turni:l.filter(x=>+x.t.data.slice(8)<=15),parte:'1–15'},{mese:m,turni:l.filter(x=>+x.t.data.slice(8)>15),parte:'dal 16'}].filter(x=>x.turni.length);
+  });
+}
+async function canvasSquadre(b){
+  try{ await Promise.all([document.fonts.load('700 18px Jost'),document.fonts.load('500 13px Jost')]); }catch(e){}
+  const F="'Jost',system-ui,sans-serif", turni=b.turni;
+  const pers=[...new Map(turni.flatMap(x=>x.ass.map(y=>[y.c.id,y.c]))).values()].sort((a,c)=>a.nome.localeCompare(c.nome));
+  const sedi=[...new Set(turni.map(x=>x.t.piscina_id))], piuSedi=sedi.length>1;
+  const ora=v=>hm(v).replace(/:00$/,'');
+  const sc=2, pad=24, titH=70, headH=piuSedi?78:62, rowH=34, colW=50;
+  const m=document.createElement('canvas').getContext('2d'); m.font='600 15px '+F;
+  const nameW=Math.max(150, ...pers.map(c=>m.measureText(c.nome).width+28));
+  const W=pad*2+nameW+colW*turni.length, H=titH+headH+rowH*pers.length+56+pad;
+  const cv=document.createElement('canvas'); cv.width=W*sc; cv.height=H*sc;
+  const x=cv.getContext('2d'); x.scale(sc,sc);
+  const rr=(X,Y,w,h,r)=>{ x.beginPath(); x.moveTo(X+r,Y); x.arcTo(X+w,Y,X+w,Y+h,r); x.arcTo(X+w,Y+h,X,Y+h,r); x.arcTo(X,Y+h,X,Y,r); x.arcTo(X,Y,X+w,Y,r); x.closePath(); };
+  const PINK='#EB0089', INK='#111111', MUTED='#6B6C70', LINE='#E1E1E4';
+  x.fillStyle='#fff'; x.fillRect(0,0,W,H);
+  x.fillStyle=PINK; x.fillRect(0,0,W,6);
+  // titolo
+  const nomiSedi=sedi.map(id=>(piscinaById(id)||{nome:'?'}).nome).join(', ');
+  x.fillStyle=INK; x.font='700 22px '+F; x.textBaseline='alphabetic';
+  x.fillText('Squadre · '+nomeMese(b.mese).replace(/^./,c=>c.toUpperCase())+(b.parte?' · '+b.parte:''), pad, 40);
+  x.fillStyle=MUTED; x.font='500 14px '+F; x.fillText(nomiSedi, pad, 60);
+  const y0=titH, x0=pad+nameW;
+  // intestazione colonne
+  turni.forEach(({t},i)=>{
+    const [yy,mm,gg]=t.data.split('-').map(Number), dt=new Date(yy,mm-1,gg), we=dt.getDay()===0||dt.getDay()===6;
+    const cx=x0+i*colW+colW/2;
+    if(we){ x.fillStyle='#FDE6F2'; x.fillRect(x0+i*colW, y0, colW, headH+rowH*pers.length); }
+    x.textAlign='center';
+    x.fillStyle=MUTED; x.font='500 12px '+F; x.fillText(dt.toLocaleDateString('it-IT',{weekday:'short'}), cx, y0+16);
+    x.fillStyle=PINK; x.font='700 20px '+F; x.fillText(String(gg), cx, y0+38);
+    let yy2=y0+54;
+    if(piuSedi){ x.fillStyle=INK; x.font='600 10px '+F; let n=(piscinaById(t.piscina_id)||{nome:'?'}).nome; while(n.length>3 && x.measureText(n).width>colW-4) n=n.slice(0,-1); x.fillText(n, cx, yy2); yy2+=14; }
+    x.fillStyle=MUTED; x.font='500 10px '+F; x.fillText(ora(t.ora_inizio)+'–'+ora(t.ora_fine), cx, yy2);
+  });
+  x.textAlign='left';
+  x.fillStyle=MUTED; x.font='600 13px '+F; x.fillText('Collaboratore', pad, y0+headH-12);
+  x.fillStyle=PINK; x.fillRect(pad, y0+headH-3, W-pad*2, 3);
+  // righe
+  pers.forEach((c,r)=>{
+    const ry=y0+headH+r*rowH;
+    x.strokeStyle=LINE; x.lineWidth=1; x.beginPath(); x.moveTo(pad, ry+rowH+.5); x.lineTo(W-pad, ry+rowH+.5); x.stroke();
+    x.fillStyle=INK; x.font='600 15px '+F; x.textBaseline='middle'; x.textAlign='left'; x.fillText(c.nome, pad+4, ry+rowH/2+1);
+    turni.forEach(({t,ass},i)=>{
+      const a=ass.find(y=>y.c.id===c.id); const cx=x0+i*colW+colW/2, cy=ry+rowH/2;
+      if(a){ const f=a.a.ruolo==='F'; x.fillStyle=f?PINK:INK; rr(cx-13,cy-12,26,24,5); x.fill();
+        x.fillStyle='#fff'; x.font='700 14px '+F; x.textAlign='center'; x.fillText(f?'F':'S', cx, cy+1); }
+      else { x.strokeStyle=LINE; rr(cx-13,cy-12,26,24,5); x.stroke(); }
+    });
+    x.textBaseline='alphabetic';
+  });
+  // legenda
+  const ly=y0+headH+rowH*pers.length+30; let lx=pad;
+  x.textAlign='left'; x.textBaseline='middle';
+  [['F',PINK,'Foto'],['S',INK,'Stampa']].forEach(([l,col,t])=>{ x.fillStyle=col; rr(lx,ly-11,24,22,5); x.fill(); x.fillStyle='#fff'; x.font='700 13px '+F; x.textAlign='center'; x.fillText(l,lx+12,ly+1);
+    x.textAlign='left'; x.fillStyle=INK; x.font='500 14px '+F; x.fillText(t,lx+32,ly+1); lx+=32+x.measureText(t).width+24; });
+  x.fillStyle=MUTED; x.font='500 13px '+F; x.fillText('Frame About You · Turni', lx+10, ly+1);
+  return cv;
+}
+async function preparaImmagini(){
+  const box=document.getElementById('avimg'); if(!box) return;
+  const bl=blocchiImmagine(); S.imgSquadre=[];
+  for(const b of bl){
+    const cv=await canvasSquadre(b);
+    const blob=await new Promise(r=>cv.toBlob(r,'image/png'));
+    const nome='squadre-'+nomeMese(b.mese).replace(/\s+/g,'-')+(b.parte?'-'+b.parte.replace(/\D+/g,'-').replace(/^-|-$/g,''):'')+'.png';
+    S.imgSquadre.push({ file:new File([blob],nome,{type:'image/png'}), url:URL.createObjectURL(blob), titolo:nomeMese(b.mese)+(b.parte?' · '+b.parte:'') });
+  }
+  renderImmagini();
+}
+function renderImmagini(){
+  const box=document.getElementById('avimg'); if(!box) return;
+  const im=S.imgSquadre||[];
+  if(!im.length){ box.innerHTML='<p class="note">Preparo la tabella…</p>'; return; }
+  const tutti=(S.avvisiGruppo||[]).flatMap(g=>g.turni.flatMap(y=>y.ass)), mandato=tutti.length && tutti.every(y=>y.a.avvisato_il);
+  box.innerHTML=`<div class="img-prev">${im.map(x=>`<a href="${x.url}" target="_blank" rel="noopener" title="${esc(x.titolo)}"><img src="${x.url}" alt="Tabella squadre ${esc(x.titolo)}"></a>`).join('')}</div>
+    <div class="azioni" style="margin-top:8px"><button type="button" class="btn pic ${mandato?'':'pri'}" onclick="mandaImmagini()">📊 Manda ${im.length>1?'le '+im.length+' tabelle':'la tabella'} nel gruppo</button>${mandato?'<span class="note" style="margin:0">✉ mandato nel gruppo</span>':''}</div>`;
+}
+async function mandaImmagini(){
+  const im=S.imgSquadre||[]; if(!im.length) return;
+  const files=im.map(x=>x.file);
+  const testo='*Squadre* · '+[...new Set(im.map(x=>x.titolo.split(' · ')[0]))].join(', ')+'\n👉 Aprite il calendario e toccate *Accetto* sui vostri turni (oppure *Non posso*):\n'+linkMieiTurni();
+  if(navigator.canShare && navigator.canShare({files})){
+    try{ await navigator.share({files, text:testo}); }
+    catch(e){ if(e.name==='AbortError') return; toast('Condivisione non riuscita: scarico le immagini.'); scaricaImmagini(im); }
+  } else {
+    // computer: niente condivisione diretta → si scaricano le immagini e si apre WhatsApp con il testo, l'immagine si allega a mano
+    scaricaImmagini(im);
+    window.open('https://wa.me/?text='+encodeURIComponent(testo),'_blank','noopener');
+    toast('Immagini scaricate: allegale nel messaggio del gruppo.');
+  }
+  await segnaAvvisatoTutti();
+}
+function scaricaImmagini(im){ im.forEach(x=>{ const a=document.createElement('a'); a.href=x.url; a.download=x.file.name; document.body.appendChild(a); a.click(); a.remove(); }); }
+async function segnaAvvisatoTutti(){
+  const quando=new Date().toISOString(), ass=(S.avvisiGruppo||[]).flatMap(g=>g.turni.flatMap(y=>y.ass.map(z=>z.a)));
+  ass.forEach(a=>a.avvisato_il=quando); renderAvvisi(); renderImmagini();
+  for(let i=0;i<ass.length;i+=100){ const r=await sb.from('tp_assegnazioni').update({avvisato_il:quando}).in('id',ass.slice(i,i+100).map(a=>a.id)); if(r.error){ console.warn(r.error); break; } }
+  ass.forEach(a=>{ const b=S.ass.find(z=>z.id===a.id); if(b) b.avvisato_il=quando; });
 }
 function renderAvvisiGruppo(){
   const box=document.getElementById('avg'); if(!box) return;
