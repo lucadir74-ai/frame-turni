@@ -114,11 +114,10 @@ main{max-width:1100px;margin:0 auto;padding:16px}
 .gct{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:10px}
 .gcl{margin:8px 0}
 .gcr{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:6px 8px;padding:7px 8px;border-bottom:1px solid var(--line);border-radius:8px}
-.gcr.sq{background:#E7F3EC;border:1px solid #BFDCC9;box-shadow:inset 4px 0 0 var(--ok);margin:4px 0}
+.gcr.sq{background:#F1F8F3;margin:2px 0}
+.gcr .stella{color:var(--water)}
 .gcn{flex:1 1 200px;min-width:0}
 .gcb{display:flex;flex-wrap:wrap;gap:6px}
-.insq{display:inline-block;font:700 .72rem var(--fc);color:#fff;background:var(--ok);border-radius:4px;padding:1px 6px;margin-top:3px}
-.dasc{display:inline-block;font-size:.78rem;color:var(--muted);margin-top:3px}
 .gct.pubb{border:2px solid var(--water);background:#FFF7FB}
 .gct.bozza{border-style:dashed}
 .stato.pubb{background:var(--water);color:#fff}
@@ -1660,14 +1659,13 @@ function renderGC(){
       : t.pubblicato ? '<span class="stato pubb">✓ Squadra pubblicata</span>' : '<span class="stato bozza">Squadra da pubblicare</span>';
     const riga = ({c,a,cand}) => {
       const info=`<small class="note">${RUOLI[c.ruolo]||''} · <span class="stelle">${stelle(c.livello||0)}</span>${c.auto?' · 🚗':''}</small>`;
-      const etich = a ? `<span class="insq">IN SQUADRA · ${a.ruolo==='F'?'FOTO':'STAMPA'}</span>${cand?'':' <small class="note">(non candidato)</small>'}`
-                      : '<span class="dasc">Candidato · da scegliere</span>';
+      const sq = a ? `<div class="note">In squadra come <b>${a.ruolo==='F'?'foto':'stampa'}</b>${cand?'':' (non candidato)'}</div>` : '';
       const bott = a
         ? `<button type="button" class="btn pic del" onclick="togliSquadraGC('${a.id}')">Togli dalla squadra</button>`
-        : (c.ruolo!=='S'?`<button type="button" class="btn pic pri" onclick="assegnaGC('${t.id}','${c.id}','F')">In squadra: foto</button>`:'')
-          + (c.ruolo!=='F'?`<button type="button" class="btn pic pri" onclick="assegnaGC('${t.id}','${c.id}','S')">In squadra: stampa</button>`:'')
-          + `<button type="button" class="btn pic" onclick="ritiraCandGC('${c.id}','${t.id}')">Togli candidatura</button>`;
-      return `<div class="gcr ${a?'sq':''}"><div class="gcn"><b>${esc(c.nome)}</b> ${info}<div>${etich}</div></div><div class="gcb">${bott}</div></div>`;
+        : (c.ruolo!=='S'?`<button type="button" class="btn pic" onclick="assegnaGC('${t.id}','${c.id}','F')">Foto</button>`:'')
+          + (c.ruolo!=='F'?`<button type="button" class="btn pic" onclick="assegnaGC('${t.id}','${c.id}','S')">Stampa</button>`:'')
+          + `<button type="button" class="btn pic del" onclick="ritiraCandGC('${c.id}','${t.id}')">Togli candidatura</button>`;
+      return `<div class="gcr ${a?'sq':''}"><div class="gcn">${a?'<b class="stella" title="In squadra">★</b> ':''}<b>${esc(c.nome)}</b> ${info}${sq}</div><div class="gcb">${bott}</div></div>`;
     };
     return `<div class="gct ${t.annullato?'':t.pubblicato?'pubb':'bozza'}" style="border-left:6px solid ${coloreSede(p)}">
       <div class="t-head"><b>${esc(p.nome)}</b><span class="t-ora">${hm(t.ora_inizio)}–${hm(t.ora_fine)}</span> ${stato}</div>
