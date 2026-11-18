@@ -1923,7 +1923,7 @@ function vistaCollab(){
     ${c.auto?'<span title="Ha la macchina">🚗</span>':''}
     ${c.organizzatore?'<span class="tag">organizzatore</span>':''}
     ${c.attivo?'':'<span class="tag">non attivo</span>'}
-    <span class="info">${[c.telefono,c.email].filter(Boolean).map(esc).join(', ')}</span>
+    <span class="info">${[c.telefono,c.email].filter(Boolean).map(esc).join(', ')}${c.aggiornato_il?` · <span title="Dati cambiati dal ragazzo nel calendario">dati aggiornati il ${new Date(c.aggiornato_il).toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit'})}</span>`:''}</span>
     <button class="btn pic" onclick="formCollab('${c.id}')">Modifica</button></div>`).join('')+'</div>';
   m.innerHTML=h;
 }
