@@ -187,7 +187,15 @@ async function carica(id){
   if(r.error || !r.data) return null;
   S.tutti = raggruppa((r.data.turni||[]).map(t=>normalizza(t,id)));
   applicaAmbito();
+  segnaVisti(id);
   return { io: r.data.io || (r.data.staff||[]).find(c=>c.id===id) || null };
+}
+// aprendo il calendario i turni pubblicati in cui si è in squadra risultano "visualizzati" agli organizzatori
+// (nessun Accetto / Non posso: usa tp_pub_risposta con p_si = true, che segna solo la lettura)
+function segnaVisti(id){
+  S.tutti.filter(t=>t.mia_risposta==='attesa' && t.pubblicato && !t.annullato && (t.squadra||[]).some(x=>x.io===true||x.id===id) && oreAlTurno(t)>0)
+    .forEach(t=>{ t.mia_risposta='si';
+      t.ids.forEach(tid=>sb.rpc('tp_pub_risposta', { p_collab:id, p_turno:tid, p_si:true }).then(r=>{ if(r.error) console.warn(r.error); })); });
 }
 const sonoIo = x => x.io===true || (x.id!=null && x.id===S.io.id);
 
@@ -317,13 +325,8 @@ function descrTurno(t){ return t.piscina+', '+nomeGiorno(t.data)+', '+hm(t.ora_i
 function linkWa(testo){ return 'https://wa.me/'+WA_ORG+'?text='+encodeURIComponent(testo); }
 function posti(t){ const p=[]; if(t.fotografi) p.push(t.fotografi+' foto'); if(t.stampatori) p.push(t.stampatori+' stampa'); return p.join(' + ')||'—'; }
 
-// turni in cui sono in squadra e non ho ancora risposto (solo con il database aggiornato: campo mia_risposta)
-function daConfermare(){ return S.tutti.filter(t=>t.mia_risposta==='attesa' && inSquadra(t) && t.pubblicato && !t.annullato && oreAlTurno(t)>0); }
-function avvisoConferma(){
-  const n=daConfermare().length; if(!n) return '';
-  return `<div class="daconf"><b>${n===1?'Hai 1 turno da confermare':'Hai '+n+' turni da confermare'}</b>`
-    + (S.vista==='miei' ? '<span>Tocca <b>Accetto</b> o <b>Non posso</b> qui sotto.</span>' : `<button onclick="vai('miei')">Vedi</button>`)+'</div>';
-}
+// niente più conferma da dare: i turni si segnano come visualizzati da soli (segnaVisti)
+function avvisoConferma(){ return ''; }
 
 function vistaTurni(){
   const m=document.getElementById('main');
@@ -352,17 +355,8 @@ function scheda(t){
   // libero = entro 48 ore ma solo candidato e la squadra è già pubblicata senza di lui: può togliersi da solo
   const ore=oreAlTurno(t), libero = !sq && t.pubblicato;
   let azione='';
-  const conRisposta = sq && t.pubblicato && t.mia_risposta!=null;   // database aggiornato: si accetta o si rifiuta
-  const waBetty = `<a class="btnwa" target="_blank" rel="noopener" href="${linkWa('Ciao Betty, sono '+S.io.nome+'. Non riesco a fare il turno '+descrTurno(t)+': puoi togliermi?')}">Scrivi a Betty su WhatsApp</a>`;
   if(t.annullato) azione='';
   else if(ore<=0) azione=`<p class="note48">${t.data<oggiStr()?'Turno concluso.':'Turno già iniziato.'}${sq?' Eri in squadra.':''}</p>`;
-  else if(conRisposta && t.mia_risposta==='attesa') azione = `<div class="stato-io attesa">Sei in squadra: confermi il turno?</div>`
-    + `<div class="risp"><button class="btnpri" onclick="rispondi('${t.id}',true)">Accetto</button>`
-    + (ore>48 ? `<button class="btnsec" onclick="rispondi('${t.id}',false)">Non posso</button></div>`
-              : `</div><p class="note48">Mancano meno di 48 ore: se non puoi, avvisa Betty.</p>${waBetty}`);
-  else if(conRisposta) azione = `<div class="stato-io">✓ Turno confermato</div>`
-    + (ore>48 ? `<button class="btnlink" onclick="rispondi('${t.id}',false)">Non posso più farlo</button>`
-              : `<p class="note48">Mancano meno di 48 ore: se non puoi più, avvisa Betty.</p>${waBetty}`);
   else if(!cand && !sq) azione=`<button class="btnpri" onclick="candida('${t.id}',true)">Mi candido</button>`;
   else if(ore>48 || libero) azione=`<div class="stato-io">✓ ${sq?'Sei in squadra':'Ti sei candidato'}</div>`
     + '<p class="note48">Per toglierti ritocca il turno nel Calendario.</p>';
@@ -423,7 +417,6 @@ async function tocco(id){
   const t=S.turni.find(x=>x.id===id);
   if(t.annullato){ toast('Turno annullato'+(t.motivo?' ('+t.motivo+')':'')+'.'); return; }
   if(oreAlTurno(t)<=0){ toast(t.data<oggiStr()?'Turno concluso.':'Turno già iniziato.'); return; }
-  if(inSquadra(t) && t.pubblicato && t.mia_risposta!=null) return apriGiorno(t.data);   // dal dettaglio si accetta o si rifiuta
   if(!mio(t)) return candida(id,true);
   if(oreAlTurno(t)<=48 && !(t.pubblicato && !inSquadra(t))) return apriGiorno(t.data);   // meno di 48 ore: nel dettaglio c'è il messaggio per Betty
   return candida(id,false,!inSquadra(t));   // chi è già in squadra conferma prima di togliersi, poi avvisa Betty
@@ -488,15 +481,6 @@ async function candida(id,si,veloce){
   if(si) toast('Candidatura inviata.');
   else if(data && data.era_in_squadra) avvisoRitiro(t);
   else toast('Candidatura ritirata.');
-}
-// Accetto / Non posso sul turno in cui si è in squadra (funzione tp_pub_risposta del database)
-async function rispondi(id,si){
-  const t=S.tutti.find(x=>x.id===id); if(!t) return;
-  if(!si && !confirm('Non puoi fare il turno '+descrTurno(t)+'?\n\nEsci dalla squadra e il posto torna libero per un altro collega. Confermi?')) return;
-  const { error } = await sb.rpc('tp_pub_risposta', { p_collab:S.io.id, p_turno:id, p_si:si });
-  if(error){ toast(error.message||'Non salvato, riprova.',true); await ricarica(); aggiorna(); return; }
-  const y=window.scrollY; await ricarica(); aggiorna(); window.scrollTo(0,y);
-  toast(si ? 'Turno confermato. Grazie!' : 'Fatto: sei uscito dalla squadra. Gli organizzatori sono avvisati.');
 }
 function avvisoRitiro(t){
   const d=document.createElement('div'); d.className='velo';

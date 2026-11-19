@@ -1364,13 +1364,13 @@ async function pubblicaEvento(id){
 
 // ---------- AVVISI WHATSAPP A CHI È IN SQUADRA ----------
 // Dopo la pubblicazione: una riga per persona con il messaggio già scritto (tutti i suoi turni appena pubblicati)
-// e il link a "I miei turni", dove accetta o rifiuta. Il WhatsApp parte dal telefono di chi lo tocca: basta premere invia.
+// e il link a "I miei turni": quando li apre, agli organizzatori risulta "visualizzato". Il WhatsApp parte dal telefono di chi lo tocca: basta premere invia.
 const linkMieiTurni = () => new URL('calendario.html?vista=miei', location.href).href;
 function testoAvviso(c, righe){
   const r = x => { const p=piscinaById(x.t.piscina_id)||{nome:'?'};
     return '• '+nomeGiorno(x.t.data)+', '+hm(x.t.ora_inizio)+'–'+hm(x.t.ora_fine)+' · '+p.nome+(p.indirizzo?' ('+p.indirizzo+')':'')+' · '+(x.a.ruolo==='F'?'foto':'stampa'); };
   return 'Ciao '+c.nome.split(' ')[0]+'! Sei in squadra:\n'+righe.map(r).join('\n')
-    +'\n\nApri il calendario e tocca Accetto (oppure Non posso, se non riesci): '+linkMieiTurni();
+    +'\n\nI tuoi turni sono nel calendario: '+linkMieiTurni();
 }
 async function formAvvisi(ids){
   if(!ids || !ids.length) return;
@@ -1391,7 +1391,7 @@ async function formAvvisi(ids){
   if(!lista.length){ toast('Nessuno in squadra da avvisare in questi turni.'); return; }
   S.avvisiGruppo=blocchiGruppo(lista);
   apriDialog('Avvisa la squadra', `<div class="gruppo-box"><b>Messaggio nel gruppo WhatsApp</b>
-      <p class="note" style="margin:2px 0 8px">Manda la <b>tabella</b> (un'immagine per mese, con il link per accettare) oppure il <b>testo</b> giorno per giorno: scegli il gruppo dei collaboratori e premi invia. Chi è nel messaggio risulta avvisato.</p>
+      <p class="note" style="margin:2px 0 8px">Manda la <b>tabella</b> (un'immagine per mese, con il link al calendario) oppure il <b>testo</b> giorno per giorno: scegli il gruppo dei collaboratori e premi invia. Chi è nel messaggio risulta avvisato.</p>
       <div id="avimg"></div>
       <p class="note" style="margin:12px 0 0"><b>Come testo</b>:</p>
       <div id="avg"></div></div>
@@ -1429,7 +1429,7 @@ function testoGruppo(turni){
   });
   h+='━━━━━━━━━━\n';
   if(sedi.size) h+='\n*Indirizzi*\n'+[...sedi].map(([n,i])=>'• '+n+': '+i).join('\n')+'\n';
-  return h+'\n👉 Aprite il calendario e toccate *Accetto* sui vostri turni (oppure *Non posso*):\n'+linkMieiTurni();
+  return h+'\n👉 I vostri turni sono nel calendario:\n'+linkMieiTurni();
 }
 // ---------- TABELLA DELLE SQUADRE COME IMMAGINE (per il gruppo WhatsApp) ----------
 // righe = persone in squadra, colonne = turni; F rosa = foto, S nera = stampa.
@@ -1523,7 +1523,7 @@ function renderImmagini(){
 async function mandaImmagini(){
   const im=S.imgSquadre||[]; if(!im.length) return;
   const files=im.map(x=>x.file);
-  const testo='*Squadre* · '+[...new Set(im.map(x=>x.titolo.split(' · ')[0]))].join(', ')+'\n👉 Aprite il calendario e toccate *Accetto* sui vostri turni (oppure *Non posso*):\n'+linkMieiTurni();
+  const testo='*Squadre* · '+[...new Set(im.map(x=>x.titolo.split(' · ')[0]))].join(', ')+'\n👉 I vostri turni sono nel calendario:\n'+linkMieiTurni();
   if(navigator.canShare && navigator.canShare({files})){
     try{ await navigator.share({files, text:testo}); }
     catch(e){ if(e.name==='AbortError') return; toast('Condivisione non riuscita: scarico le immagini.'); scaricaImmagini(im); }
@@ -1564,7 +1564,7 @@ function renderAvvisi(){
   const box=document.getElementById('avv'); if(!box) return;
   box.innerHTML=S.avvisi.map((x,i)=>{ const n=telefonoWa(x.c.telefono);
     const mandato=x.r.every(y=>y.a.avvisato_il), si=x.r.every(y=>y.a.risposta==='si');
-    const stato = si ? '<span class="ok">✅ ha accettato</span>' : mandato ? '✉ WhatsApp mandato · in attesa di risposta' : '';
+    const stato = si ? '<span class="ok">👁 visualizzato</span>' : mandato ? '✉ WhatsApp mandato · non ancora visualizzato' : '';
     return `<div class="cand"><span class="n">${esc(x.c.nome)}</span>
       <span class="b">${n?`<a class="btn pic ${mandato?'':'pri'}" style="text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/${n}?text=${encodeURIComponent(testoAvviso(x.c,x.r))}" onclick="segnaAvvisato(${i})">WhatsApp</a>`:''}</span>
       <span class="d">${x.r.map(y=>esc(nomeGiorno(y.t.data)+' '+hm(y.t.ora_inizio)+'–'+hm(y.t.ora_fine)+' · '+((piscinaById(y.t.piscina_id)||{nome:'?'}).nome))).join('<br>')}
@@ -2088,7 +2088,7 @@ function elencoPersone(t){
       if(fuori) return `<div class="gcr fuori" title="${esc(testoAltrove(fuori))}"><div class="gcn"><b>${esc(c.nome)}</b> ${info}<div class="note">In squadra a <b>${esc((piscinaById(fuori.piscina_id)||{nome:'?'}).nome)}</b> ${hm(fuori.ora_inizio)}–${hm(fuori.ora_fine)}</div></div></div>`;
       // a squadra pubblicata: la risposta del ragazzo (solo con il database aggiornato) e se il WhatsApp è partito
       const risp = a && t.pubblicato && ('risposta' in a)
-        ? ' · '+(a.risposta==='si' ? '<span class="ok">✅ ha accettato</span>' : '⏳ in attesa di risposta')+(a.avvisato_il?' · ✉ avvisato':'') : '';
+        ? ' · '+(a.risposta==='si' ? '<span class="ok">👁 visualizzato</span>' : '⏳ non ancora visualizzato')+(a.avvisato_il?' · ✉ avvisato':'') : '';
       const sq = a ? `<div class="note">In squadra come <b>${a.ruolo==='F'?'foto':'stampa'}</b>${cand?'':' (non candidato)'}${risp}</div>` : '';
       const bott = a
         ? `<button type="button" class="btn pic del" onclick="togliSquadraGC('${a.id}')">Togli dalla squadra</button>`
