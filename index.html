@@ -140,7 +140,15 @@ body.tab-full .griglia.schermo thead th.nome{z-index:3}
 .calo .gg.off:hover{border-color:var(--line)}
 .calo .gg.oggi{border-color:var(--ink)}
 .calo .gg.inc,.calo .gg.inc:hover{border:2px solid var(--red);padding:3px 4px}
-.calo .num{font:700 .85rem var(--fc)}
+.calo .num{font:700 .85rem var(--fc);display:flex;justify-content:space-between;align-items:center;gap:2px}
+.calo .num .mz{background:var(--red);color:#fff;border-radius:999px;padding:0 6px;font-size:.75rem;line-height:1.35}
+.scop{display:flex;flex-wrap:wrap;gap:6px;align-items:center;background:#FDECEC;border:1px solid var(--red);border-radius:10px;padding:8px 10px;margin:0 0 10px}
+.scop button{font:600 .85rem var(--fc);border:1px solid var(--red);background:#fff;border-radius:999px;padding:3px 10px;cursor:pointer}
+.scop button span{color:var(--red);font-weight:700}
+.scop.ok{background:#EAF7EE;border-color:var(--ok);color:var(--ok);font-weight:600}
+.gc-fab{border-radius:10px;padding:8px 10px;margin:0 0 10px;border:1px solid}
+.gc-fab.ko{background:#FDECEC;border-color:var(--red)}.gc-fab.ko b{color:var(--red)}
+.gc-fab.ok{background:#EAF7EE;border-color:var(--ok);color:var(--ok);font-weight:600}
 .calo .gg.off .num{color:#B5B6B9}
 .calo .cr{display:flex;gap:5px;align-items:baseline;font-size:.78rem;border-left:4px solid var(--c);background:#FAFAFB;border-radius:4px;padding:2px 5px;white-space:nowrap;overflow:hidden}
 .calo .cr b{color:var(--c)}
@@ -164,7 +172,7 @@ body.tab-full .griglia.schermo thead th.nome{z-index:3}
 .gca{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .gca select{border:1px solid var(--line);border-radius:6px;padding:5px;font:inherit;flex:1;min-width:150px}
 @media (max-width:700px){ .calo .cr .nm{display:none} .calo .gg{min-height:70px} }
-@media (max-width:480px){ .calo{gap:3px} .calo .gg{padding:3px 2px;min-height:58px} .calo .cr{font-size:.66rem;gap:2px;padding:1px 2px;border-left-width:3px} .calo .wd{font-size:.7rem} }
+@media (max-width:480px){ .calo{gap:3px} .calo .gg{padding:3px 2px;min-height:58px} .calo .cr{font-size:.66rem;gap:2px;padding:1px 2px;border-left-width:3px} .calo .num .mz{padding:0 4px;font-size:.65rem} .calo .wd{font-size:.7rem} }
 .pres{font-size:.88rem;margin:6px 0 0}
 .pres.ok{color:var(--ok);font-weight:600}
 .pres.da{color:var(--warn);font-weight:600}
@@ -2047,26 +2055,58 @@ function sedeDisp(id){
 }
 function candVista(v){ S.candVista=v; vistaDisp(); }
 function nomeC(id){ return (collabById(id)||{nome:'?'}).nome; }
+// Fabbisogno di una giornata contando le PERSONE, non le candidature: chi si candida a due piscine alla stessa ora
+// conta una volta sola. Per ogni momento della giornata (inizio di ogni turno) prende i turni in corso insieme e
+// assegna i candidati ai posti (foto/stampa secondo il ruolo, una persona = un posto); il momento peggiore dà il mancante.
+// Chi è già in squadra conta nel ruolo assegnato. Restituisce {posti, persone, manca, mF, mS, corti:Set(turni scoperti)}.
+function fabbisognoGiorno(tg){
+  const tv=tg.filter(t=>!t.annullato); let peggio={posti:0,persone:0,manca:0,mF:0,mS:0}; const corti=new Set();
+  const ini=[...new Set(tv.map(t=>hm(t.ora_inizio)))];
+  ini.forEach(ora=>{
+    const att=tv.filter(t=>hm(t.ora_inizio)<=ora && ora<hm(t.ora_fine));
+    const posti=[]; att.forEach(t=>{ for(let i=0;i<(t.fotografi||0);i++) posti.push({t,r:'F'}); for(let i=0;i<(t.stampatori||0);i++) posti.push({t,r:'S'}); });
+    const ids=[...new Set(att.flatMap(t=>[...S.cand,...S.ass].filter(x=>x.turno_id===t.id).map(x=>x.collaboratore_id)))];
+    const puo=(cid,po)=>{ const a=S.ass.find(x=>x.turno_id===po.t.id&&x.collaboratore_id===cid); if(a) return a.ruolo===po.r;
+      if(!S.cand.some(x=>x.turno_id===po.t.id&&x.collaboratore_id===cid)) return false;
+      const ru=(collabById(cid)||{}).ruolo; return !ru || ru==='FS' || ru===po.r; };
+    const occ=new Array(posti.length).fill(null);
+    const prova=(cid,vis)=>{ for(let j=0;j<posti.length;j++){ if(vis[j]||!puo(cid,posti[j])) continue; vis[j]=1;
+      if(occ[j]===null || prova(occ[j],vis)){ occ[j]=cid; return true; } } return false; };
+    ids.forEach(cid=>prova(cid,[]));
+    const liberi=posti.filter((_,j)=>occ[j]===null);
+    if(liberi.length) att.forEach(t=>corti.add(t.id));   // a quell'ora mancano persone: tutti i turni in corso diventano arancioni
+    if(liberi.length>peggio.manca || (!peggio.manca && posti.length>peggio.posti))
+      peggio={posti:posti.length, persone:ids.length, manca:liberi.length, mF:liberi.filter(x=>x.r==='F').length, mS:liberi.filter(x=>x.r==='S').length};
+  });
+  peggio.corti=corti; return peggio;
+}
+function testoManca(f){ const d=[f.mF?f.mF+' foto':'', f.mS?f.mS+' stampa':''].filter(Boolean).join(' + '); return 'mancano '+f.manca+(d?' ('+d+')':''); }
 function calendarioCand(turni){
   const [y,mm]=S.mese.split('-').map(Number);
   const primo=new Date(y,mm-1,1), ult=new Date(y,mm,0).getDate(), vuoti=(primo.getDay()+6)%7, o=oggi();
-  let h='<div class="calo">'+['Lun','Mar','Mer','Gio','Ven','Sab','Dom'].map(x=>`<div class="wd">${x}</div>`).join('');
+  // in alto: le giornate che hanno ancora bisogno di adesioni, con quante persone mancano (tocca per aprire il giorno)
+  const scop=[];
+  for(let g=1; g<=ult; g++){ const d=S.mese+'-'+String(g).padStart(2,'0'); const f=fabbisognoGiorno(turni.filter(t=>t.data===d)); if(f.manca) scop.push({d,g,f}); }
+  let h = scop.length
+    ? `<div class="scop"><b>Servono ancora persone:</b> ${scop.map(x=>`<button type="button" onclick="giornoCand('${x.d}')" title="${esc(testoManca(x.f))}">${esc(nomeGiorno(x.d).split(' ').slice(0,2).join(' '))} <span>−${x.f.manca}</span></button>`).join('')}<span class="note">totale ${scop.reduce((n,x)=>n+x.f.manca,0)} persone</span></div>`
+    : (turni.some(t=>!t.annullato) ? '<div class="scop ok">✓ Tutte le giornate hanno abbastanza candidati.</div>' : '');
+  h+='<div class="calo">'+['Lun','Mar','Mer','Gio','Ven','Sab','Dom'].map(x=>`<div class="wd">${x}</div>`).join('');
   for(let i=0;i<vuoti;i++) h+='<div class="gg vuoto"></div>';
   for(let g=1; g<=ult; g++){
     const d=S.mese+'-'+String(g).padStart(2,'0');
     const tg=turni.filter(t=>t.data===d).sort((a,b)=>(piscinaById(a.piscina_id)?.nome||'').localeCompare(piscinaById(b.piscina_id)?.nome||'')||hm(a.ora_inizio).localeCompare(hm(b.ora_inizio)));
-    const inc=tg.some(t=>!t.annullato && S.cand.filter(x=>x.turno_id===t.id).length < (t.fotografi||0)+(t.stampatori||0));
-    h+=`<div class="gg ${tg.length?'':'off'} ${d===o?'oggi':''} ${inc?'inc':''}" ${tg.length?`onclick="giornoCand('${d}')" role="button" tabindex="0"`:''}><div class="num">${g}</div>`
+    const fb=fabbisognoGiorno(tg), inc=fb.manca>0;
+    h+=`<div class="gg ${tg.length?'':'off'} ${d===o?'oggi':''} ${inc?'inc':''}" ${tg.length?`onclick="giornoCand('${d}')" role="button" tabindex="0"`:''}><div class="num">${g}${inc?`<span class="mz" title="${esc(testoManca(fb))}">−${fb.manca}</span>`:''}</div>`
       + tg.map(t=>{
           const p=piscinaById(t.piscina_id)||{nome:'?'}; const k=S.cand.filter(x=>x.turno_id===t.id); const posti=(t.fotografi||0)+(t.stampatori||0);
           const nomi=k.map(x=>{ const sq=S.ass.some(a=>a.turno_id===t.id&&a.collaboratore_id===x.collaboratore_id); return (sq?'★':'')+esc(nomeC(x.collaboratore_id).split(' ')[0]); });
           const lett=fasciaDi(t);
           return `<div class="cr ${t.annullato?'ann':''}" style="--c:${coloreSede(p)}" title="${esc(p.nome)} ${hm(t.ora_inizio)}–${hm(t.ora_fine)}">
-            <b>${lett}</b><span class="${t.annullato?'':k.length>=posti?'pieno':'manca'}">${t.annullato?'annull.':k.length+'/'+posti}</span>
+            <b>${lett}</b><span class="${t.annullato?'':k.length>=posti&&!fb.corti.has(t.id)?'pieno':'manca'}">${t.annullato?'annull.':k.length+'/'+posti}</span>
             <span class="nm">${nomi.slice(0,3).join(', ')}${nomi.length>3?' +'+(nomi.length-3):''}</span></div>`;
         }).join('') + '</div>';
   }
-  return h+'</div><p class="note">Clic su un giorno per vedere e gestire i candidati. M = mattina, P = pomeriggio, G = tutto il giorno. Conteggio verde = candidati sufficienti per i posti, arancione = ne mancano. Bordo rosso = giornata con almeno un turno ancora scoperto. ★ davanti a un nome = in squadra.</p>';
+  return h+'</div><p class="note">Clic su un giorno per vedere e gestire i candidati. M = mattina, P = pomeriggio, G = tutto il giorno. Conteggio verde = candidati sufficienti per i posti, arancione = ne mancano (anche quando le stesse persone si sono candidate a più piscine alla stessa ora). Bordo rosso e −N = giornata scoperta: N è il numero di persone che servono ancora, contando ognuno una volta sola e il suo ruolo (foto/stampa). ★ davanti a un nome = in squadra.</p>';
 }
 function giornoCand(d){
   apriDialog(nomeGiorno(d).replace(/^./,c=>c.toUpperCase()), `<div id="gc" data-d="${d}"></div>`);
@@ -2104,7 +2144,11 @@ function elencoPersone(t){
 function renderGC(){
   const box=document.getElementById('gc'); if(!box) return; const d=box.dataset.d;
   const tg=S.turni.filter(t=>t.data===d && sedeScelta(t.piscina_id)).sort((a,b)=>hm(a.ora_inizio).localeCompare(hm(b.ora_inizio)));
-  box.innerHTML = tg.map(t=>{
+  const fb=fabbisognoGiorno(tg);
+  const testa = !tg.some(t=>!t.annullato) ? '' : fb.manca
+    ? `<div class="gc-fab ko"><b>Servono ancora ${fb.manca} ${fb.manca===1?'persona':'persone'}</b>${fb.mF||fb.mS?` (${[fb.mF?fb.mF+' foto':'',fb.mS?fb.mS+' stampa':''].filter(Boolean).join(' + ')})`:''}<br><span class="note">Posti da coprire ${fb.posti} · persone diverse candidate ${fb.persone}${fb.persone>fb.posti-fb.manca?' (alcune solo per un ruolo o un turno dove non servono)':''}</span></div>`
+    : `<div class="gc-fab ok">✓ Persone sufficienti: ${fb.persone} candidati diversi per ${fb.posti} posti</div>`;
+  box.innerHTML = testa + tg.map(t=>{
     const p=piscinaById(t.piscina_id)||{nome:'?'}; const k=S.cand.filter(x=>x.turno_id===t.id); const posti=(t.fotografi||0)+(t.stampatori||0);
     const ass=S.ass.filter(a=>a.turno_id===t.id);
     const nF=ass.filter(a=>a.ruolo==='F').length, nS=ass.filter(a=>a.ruolo==='S').length;
