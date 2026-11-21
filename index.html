@@ -737,6 +737,7 @@ function cardTurno(t){
           ${a.avvisi.length?`<ul class="avvisi">${a.avvisi.map(v=>'<li>⚠ '+esc(v)+'</li>').join('')}</ul>`:''}
           <div class="azioni">
             <button class="btn pic ${t.pubblicato?'':'pri'}" ${t.pubblicato||a.ass.length?'':'disabled'} onclick="pubblicaGC('${t.id}',${!t.pubblicato})">${t.pubblicato?'Ritira la pubblicazione':'Pubblica squadra'}</button>
+            ${t.pubblicato?`<button class="btn pic" ${a.ass.length?'':'disabled'} onclick="formGruppo('${t.id}')">Gruppo WhatsApp${t.gruppo_link?' ✓':''}</button>`:''}
             <button class="btn pic" onclick="formAssegna('${t.id}')">Tutti i collaboratori</button>
             <button class="btn pic" ${a.nS?'':'disabled title="Assegna prima lo stampatore"'} onclick="formLinkIncassi('${t.id}')">Link incassi</button>
             <button class="btn pic" ${a.ass.length?'':'disabled'} onclick="formPresenze('${t.id}')">Presenze</button>
@@ -1397,7 +1398,8 @@ async function pubblicaEvento(id){
 const linkMieiTurni = () => new URL('calendario.html?vista=miei', location.href).href;
 function testoAvviso(c, righe){
   const r = x => { const p=piscinaById(x.t.piscina_id)||{nome:'?'};
-    return '• '+nomeGiorno(x.t.data)+', '+hm(x.t.ora_inizio)+'–'+hm(x.t.ora_fine)+' · '+p.nome+(p.indirizzo?' ('+p.indirizzo+')':'')+' · '+(x.a.ruolo==='F'?'foto':'stampa'); };
+    return '• '+nomeGiorno(x.t.data)+', '+hm(x.t.ora_inizio)+'–'+hm(x.t.ora_fine)+' · '+p.nome+(p.indirizzo?' ('+p.indirizzo+')':'')+' · '+(x.a.ruolo==='F'?'foto':'stampa')
+      +(x.t.gruppo_link?'\n  Gruppo WhatsApp del turno: '+x.t.gruppo_link:''); };
   return 'Ciao '+c.nome.split(' ')[0]+'! Sei in squadra:\n'+righe.map(r).join('\n')
     +'\n\nI tuoi turni sono nel calendario: '+linkMieiTurni();
 }
@@ -1624,6 +1626,83 @@ function avvisaSenzaRisposta(){
   const l=senzaRisposta(); if(!l.length) return;
   formAvvisi([...new Set(l.map(x=>x.t.id))]);
 }
+
+// ---------- GRUPPO WHATSAPP DEL TURNO ----------
+// WhatsApp non permette di creare un gruppo con le persone dentro da un link: il gruppo lo crea l'organizzatore dal telefono
+// con i soli organizzatori, poi incolla qui il link d'invito e i ragazzi entrano da soli con il messaggio già scritto.
+// Il link resta sul turno (colonna gruppo_link, sql-gruppo-whatsapp.sql) ed entra anche negli avvisi di "Avvisa la squadra".
+const RE_GRUPPO = /^https:\/\/chat\.whatsapp\.com\/[A-Za-z0-9]+\/?$/;
+function nomeGruppo(t){
+  const p=piscinaById(t.piscina_id)||{nome:'?'}, [y,m,g]=t.data.split('-').map(Number);
+  const gg=new Date(y,m-1,g).toLocaleDateString('it-IT',{weekday:'short'});
+  return (p.nome+' · '+gg+' '+pad(g)+'/'+pad(m)+' '+hm(t.ora_inizio)).slice(0,100);
+}
+function squadraTurno(t){
+  return S.ass.filter(a=>a.turno_id===t.id).map(a=>({a, c:collabById(a.collaboratore_id)||{id:a.collaboratore_id,nome:'?'}}))
+    .sort((x,y)=>(x.a.ruolo==='F'?0:1)-(y.a.ruolo==='F'?0:1) || x.c.nome.localeCompare(y.c.nome));
+}
+function testoBenvenuto(t){
+  const p=piscinaById(t.piscina_id)||{nome:'?'}, sq=squadraTurno(t);
+  const org=S.collab.filter(c=>c.organizzatore && c.attivo).map(c=>c.nome.split(' ')[0]);
+  return 'Ciao a tutti! Questo è il gruppo del turno:\n'
+    +'📍 '+p.nome+(p.indirizzo?' – '+p.indirizzo:'')+'\n'
+    +'📅 '+nomeGiorno(t.data)+', '+hm(t.ora_inizio)+'–'+hm(t.ora_fine)+'\n'
+    +(p.indirizzo?'🗺 https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(p.indirizzo)+'\n':'')
+    +(t.note?'📝 '+t.note+'\n':'')
+    +'\nSquadra:\n'+sq.map(x=>'• '+x.c.nome+' – '+(x.a.ruolo==='F'?'foto':'stampa')).join('\n')
+    +(org.length?'\n\nOrganizzatori: '+org.join(', '):'')
+    +'\n\nPer qualsiasi cosa scrivete qui.';
+}
+function testoInvito(c,a,t){
+  const p=piscinaById(t.piscina_id)||{nome:'?'};
+  return 'Ciao '+c.nome.split(' ')[0]+'! Sei in squadra a '+p.nome+', '+nomeGiorno(t.data)+' '+hm(t.ora_inizio)+'–'+hm(t.ora_fine)
+    +' ('+(a.ruolo==='F'?'foto':'stampa')+').\nEntra nel gruppo WhatsApp del turno, lì trovi indirizzo e dettagli: '+t.gruppo_link;
+}
+function formGruppo(tid){
+  const t=S.turni.find(x=>x.id===tid); if(!t) return;
+  if(!squadraTurno(t).length){ toast('Nessuno in squadra in questo turno.',true); return; }
+  S.gruppoTurno=tid;
+  apriDialog('Gruppo WhatsApp del turno', '<div id="grp"></div>', null, null, 'Fatto');
+  renderGruppo();
+}
+function renderGruppo(){
+  const box=document.getElementById('grp'); if(!box) return;
+  const t=S.turni.find(x=>x.id===S.gruppoTurno); if(!t) return;
+  const sq=squadraTurno(t), link=t.gruppo_link||'';
+  const org=S.collab.filter(c=>c.organizzatore && c.attivo).map(c=>esc(c.nome.split(' ')[0]));
+  const passo=(n,tit,corpo)=>`<div class="gruppo-box" style="margin-bottom:10px"><b>${n}. ${tit}</b>${corpo}</div>`;
+  box.innerHTML =
+    passo(1,'Crea il gruppo dal telefono', `<p class="note" style="margin:4px 0 6px">In WhatsApp: <b>Nuovo gruppo</b>, aggiungi solo gli organizzatori${org.length?' ('+org.join(', ')+')':''} e come nome usa:</p>
+      <div class="gca"><input readonly value="${esc(nomeGruppo(t))}" style="flex:1;min-width:0" onclick="this.select()"><button type="button" class="btn pic" onclick="copia(${esc(JSON.stringify(nomeGruppo(t)))},'Nome copiato.')">Copia</button></div>`)
+  + passo(2,'Incolla il link d\'invito', `<p class="note" style="margin:4px 0 6px">Nel gruppo: <b>Info gruppo → Invita tramite link → Copia link</b>, poi incollalo qui.</p>
+      <div class="gca"><input id="grp_link" type="url" placeholder="https://chat.whatsapp.com/…" value="${esc(link)}" style="flex:1;min-width:0"><button type="button" class="btn pic ${link?'':'pri'}" onclick="salvaGruppo()">Salva link</button></div>
+      ${link?'<p class="note ok" style="margin:6px 0 0">✓ Link salvato sul turno: entra anche negli avvisi di “Avvisa la squadra”.</p>':''}`)
+  + passo(3,'Manda l\'invito ai ragazzi', link ? `<p class="note" style="margin:4px 0 6px">Ognuno riceve il messaggio con il link ed entra da solo.</p>`
+      + sq.map(({a,c})=>{ const n=telefonoWa(c.telefono);
+          return `<div class="cand"><span class="n">${esc(c.nome)}</span><span class="b">${n?`<a class="btn pic ${a.avvisato_il?'':'pri'}" style="text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/${n}?text=${encodeURIComponent(testoInvito(c,a,t))}" onclick="segnaInvitoGruppo('${a.id}')">WhatsApp</a>`:''}</span>
+            <span class="d">${a.ruolo==='F'?'foto':'stampa'}${a.avvisato_il?' · ✉ mandato':''}${n?'':' · <span class="ko">Nessun telefono nella scheda</span>'}</span></div>`; }).join('')
+      : '<p class="note" style="margin:4px 0 0">Prima incolla il link del gruppo (passo 2).</p>')
+  + passo(4,'Scrivi il benvenuto nel gruppo', `<p class="note" style="margin:4px 0 6px">Sede, indirizzo, orari e squadra: copialo e incollalo nel gruppo.</p>
+      <textarea readonly rows="8" style="width:100%;font:inherit;font-size:.88rem">${esc(testoBenvenuto(t))}</textarea>
+      <div class="gca" style="margin-top:6px"><button type="button" class="btn pic pri" onclick="copia(${esc(JSON.stringify(testoBenvenuto(t)))},'Messaggio copiato.')">Copia messaggio</button>
+        <a class="btn pic" style="text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(testoBenvenuto(t))}">Apri in WhatsApp</a></div>`);
+}
+async function salvaGruppo(){
+  const t=S.turni.find(x=>x.id===S.gruppoTurno); if(!t) return;
+  const v=(document.getElementById('grp_link').value||'').trim();
+  if(v && !RE_GRUPPO.test(v)){ toast('Il link deve essere del tipo https://chat.whatsapp.com/…',true); return; }
+  const r=await sb.from('tp_turni').update({gruppo_link:v||null}).eq('id',t.id);
+  if(r.error && /gruppo_link/i.test(r.error.message||'')) toast('Link usato solo per ora: per salvarlo sul turno va eseguito sql-gruppo-whatsapp.sql nel database.',true);
+  else if(errore(r.error)) return;
+  else toast(v?'Link del gruppo salvato.':'Link del gruppo tolto.');
+  t.gruppo_link=v||null; renderGruppo();
+}
+async function segnaInvitoGruppo(aid){
+  const a=S.ass.find(x=>x.id===aid); if(!a) return;
+  a.avvisato_il=new Date().toISOString(); setTimeout(renderGruppo,300);
+  const r=await sb.from('tp_assegnazioni').update({avvisato_il:a.avvisato_il}).eq('id',aid);
+  if(r.error) console.warn(r.error);
+}
 // interruttore dell'evento: se acceso, nel calendario chi è in squadra vede chi lavora con lui quel giorno; se spento vede solo i propri turni
 async function colleghiEvento(id){
   const e=(S.eventi||[]).find(x=>x.id===id); if(!e) return;
@@ -1840,9 +1919,9 @@ function formCompensi(id){
 }
 function nuovoCodice(){ const a='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'; const r=new Uint32Array(24); crypto.getRandomValues(r); return [...r].map(n=>a[n%a.length]).join(''); }
 function telefonoWa(t){ let d=String(t||'').replace(/\D/g,''); if(d.startsWith('00')) d=d.slice(2); if(d.length===10 && d.startsWith('3')) d='39'+d; return d; }
-async function copia(testo){
-  try{ await navigator.clipboard.writeText(testo); toast('Link copiato.'); }
-  catch(e){ prompt('Copia il link:', testo); }
+async function copia(testo, msg){
+  try{ await navigator.clipboard.writeText(testo); toast(msg||'Link copiato.'); }
+  catch(e){ prompt('Copia:', testo); }
 }
 function linkIncassi(t){ return new URL('incassi.html?k='+t.codice_incassi, location.href).href; }
 function scadenza(t){ const [y,m,g]=t.data.split('-').map(Number); return new Date(y,m-1,g+3).toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long'}); }
@@ -2186,7 +2265,7 @@ function renderGC(){
       <div class="note">Servono ${t.fotografi} foto + ${t.stampatori} stampa · candidati <b>${k.length}</b>${nFuori?' (di cui '+nFuori+' già in squadra altrove)':''} · in squadra <b class="${nF>=t.fotografi&&nS>=t.stampatori?'okc':'koc'}">${ass.length}/${posti}</b> (foto ${nF}/${t.fotografi}, stampa ${nS}/${t.stampatori})</div>
       ${t.annullato?'':`${elencoPersone(t)}
       <div class="gca" style="margin-top:8px">${t.pubblicato
-        ? `<button type="button" class="btn pic pri" ${ass.length?'':'disabled'} onclick="chiudiDialog(); formAvvisi(['${t.id}'])">Avvisa su WhatsApp</button><button type="button" class="btn pic" onclick="pubblicaGC('${t.id}',false)">Ritira la pubblicazione</button>`
+        ? `<button type="button" class="btn pic pri" ${ass.length?'':'disabled'} onclick="chiudiDialog(); formAvvisi(['${t.id}'])">Avvisa su WhatsApp</button><button type="button" class="btn pic" ${ass.length?'':'disabled'} onclick="chiudiDialog(); formGruppo('${t.id}')">Gruppo WhatsApp${t.gruppo_link?' ✓':''}</button><button type="button" class="btn pic" onclick="pubblicaGC('${t.id}',false)">Ritira la pubblicazione</button>`
         : `<button type="button" class="btn pic pri" ${ass.length?'':'disabled'} onclick="pubblicaGC('${t.id}',true)">Pubblica squadra</button>`}
         <button type="button" class="btn pic" onclick="chiudiDialog(); formAssegna('${t.id}')">Tutti i collaboratori</button></div>`}
       <div class="gca" style="margin-top:6px"><button type="button" class="btn pic" onclick="chiudiDialog(); formTurno('${t.id}')">Modifica data e orari</button></div>
