@@ -135,7 +135,7 @@ let sb=null; const S={ tutti:[], turni:[], io:null, vista:'cal', sede:null, mese
 const AMBITI = { tutto:'Tutto', christmas:'Christmas', piscine:'Piscine' };
 function ambitoDi(t){ return t.visibile ? 'christmas' : 'piscine'; }
 function leggiAmbito(){
-  let v=null; try{ const q=new URLSearchParams(location.search); v=q.get('solo'); if(q.get('vista')==='miei') S.vista='miei'; }catch(e){}
+  let v=null; try{ const q=new URLSearchParams(location.search); v=q.get('solo'); if(q.get('vista')==='miei') S.vista='miei'; if(q.get('vista')==='squadre') S.vista='squadre'; }catch(e){}
   if(v && AMBITI[v]){ try{ localStorage.setItem(CHIAVE_AMBITO,v); }catch(e){} return v; }
   try{ v=localStorage.getItem(CHIAVE_AMBITO); }catch(e){ v=null; }
   return AMBITI[v] ? v : 'tutto';
@@ -182,7 +182,9 @@ async function avvio(){
 // Legge i turni per il collaboratore indicato. Il database risponde solo a chi è iscritto e non manda gli id degli altri:
 // ogni nome arriva con io=true/false. (Finché nel database c'è la funzione vecchia, senza parametro, si usa quella.)
 async function carica(id){
-  let r = await sb.rpc('tp_pub_calendario', { p_collab:id });
+  let [r, sq] = await Promise.all([sb.rpc('tp_pub_calendario', { p_collab:id }), sb.rpc('tp_pub_squadre', { p_collab:id })]);
+  // squadre degli eventi con "Squadre per tutti" acceso (sql-squadre-visibili.sql); senza lo script resta vuoto
+  S.squadre = sq.error ? [] : (sq.data||[]).filter(e=>(e.turni||[]).length);
   if(r.error) r = await sb.rpc('tp_pub_calendario');
   if(r.error || !r.data) return null;
   S.tutti = raggruppa((r.data.turni||[]).map(t=>normalizza(t,id)));
@@ -279,9 +281,9 @@ async function ricarica(){
 function disegna(){
   document.getElementById('app').innerHTML = `<header>
     <div class="top"><img class="logo" src="logo-bianco.png" alt="Frame About You"><h1>Ciao ${esc(S.io.nome)}</h1><button onclick="cambiaNome()">Non sei tu?</button></div>
-    <div class="seg"><button aria-current="${S.vista==='cal'}" onclick="vai('cal')">Calendario</button><button aria-current="${S.vista==='miei'}" onclick="vai('miei')">I miei turni</button><button aria-current="${S.vista==='profilo'}" onclick="vai('profilo')">Profilo</button></div>
+    <div class="seg"><button aria-current="${S.vista==='cal'}" onclick="vai('cal')">Calendario</button><button aria-current="${S.vista==='miei'}" onclick="vai('miei')">I miei turni</button>${(S.squadre||[]).length||S.vista==='squadre'?`<button aria-current="${S.vista==='squadre'}" onclick="vai('squadre')">Squadre</button>`:''}<button aria-current="${S.vista==='profilo'}" onclick="vai('profilo')">Profilo</button></div>
     <div class="corsia"></div></header><main id="main"></main>`;
-  S.vista==='miei' ? vistaTurni() : S.vista==='profilo' ? vistaProfilo() : vistaCal();
+  S.vista==='miei' ? vistaTurni() : S.vista==='profilo' ? vistaProfilo() : S.vista==='squadre' ? vistaSquadre() : vistaCal();
 }
 
 // ---------- PROFILO: ognuno cambia i propri dati (telefono, email, macchina, cosa fa) ----------
@@ -374,11 +376,42 @@ function scheda(t){
   </div>`;
 }
 
+// ================= SQUADRE: tutti i turni degli eventi con "Squadre per tutti", con chi c'è =================
+function soloMieiSquadre(v){ S.soloMieiSq=v; vistaSquadre(); }
+function vistaSquadre(){
+  const m=document.getElementById('main'); if(!m) return;
+  const ev=S.squadre||[];
+  if(!ev.length){ m.innerHTML='<div class="vuoto">Al momento non ci sono squadre da mostrare.</div>'; return; }
+  const io = x => x.io===true;
+  let h=`<p class="intro">Tutti i turni da oggi in poi, con la squadra di ognuno. Si aggiorna da solo quando gli organizzatori pubblicano o cambiano una squadra.</p>
+    <div class="ambiti"><button aria-current="${!S.soloMieiSq}" onclick="soloMieiSquadre(false)">Tutti i giorni</button><button aria-current="${!!S.soloMieiSq}" onclick="soloMieiSquadre(true)">Solo i giorni in cui lavoro</button></div>`;
+  let vuoto=true;
+  ev.forEach(e=>{
+    let turni=e.turni||[];
+    if(S.soloMieiSq){ const giorni=new Set(turni.filter(t=>(t.squadra||[]).some(io)).map(t=>t.data)); turni=turni.filter(t=>giorni.has(t.data)); }
+    if(!turni.length) return; vuoto=false;
+    if(ev.length>1) h+=`<h2 style="font:700 1.15rem var(--fc);margin:16px 0 8px">${esc(e.nome)}</h2>`;
+    [...new Set(turni.map(t=>t.data))].forEach(d=>{
+      const tg=turni.filter(t=>t.data===d), mio=tg.some(t=>(t.squadra||[]).some(io));
+      h+=`<div class="giorno ${mio?'mio':''}"><h2>${nomeGiorno(d)}</h2>`+tg.map(t=>{
+        const sq=t.squadra||[];
+        const chi = t.annullato ? '' : !t.pubblicato ? '<div class="squadra">Squadra non ancora pubblicata</div>'
+          : sq.length ? `<div class="squadra">${sq.map(x=>`<span class="${io(x)?'io':''}"><span class="tag ${x.ruolo}">${x.ruolo==='F'?'FOTO':'STAMPA'}</span>${esc(x.nome)}${io(x)?' (tu)':''}</span>`).join(' ')}</div>`
+          : '<div class="squadra">Nessuno in squadra</div>';
+        return `<div style="margin:8px 0 0;padding-left:8px;border-left:4px solid ${esc(t.colore||'#818286')}${t.annullato?';opacity:.6':''}">
+          <div class="pisc"><b>${esc(t.sede)}</b> <span class="ore">${hm(t.ora_inizio)}–${hm(t.ora_fine)}</span>${t.annullato?`<span class="annullo">ANNULLATO${t.motivo?' · '+esc(t.motivo):''}</span>`:''}</div>${chi}</div>`;
+      }).join('')+'</div>';
+    });
+  });
+  if(vuoto) h+='<div class="vuoto">'+(S.soloMieiSq?'Non sei in squadra in nessun turno da oggi in poi.':'Al momento non ci sono turni.')+'</div>';
+  m.innerHTML=h;
+}
+
 // ================= CALENDARIO =================
 const PALETTE=['#EB0089','#1E6FD9','#E07B00','#2E9D5B','#7B3FC4','#00A3A3','#C8333A','#6B6C70'];
 function coloreT(t){ if(!t.visibile) return '#818286'; if(t.colore) return t.colore; let h=0; for(const ch of String(t.piscina_id||t.piscina)) h=(h*31+ch.charCodeAt(0))>>>0; return PALETTE[h%PALETTE.length]; }
 function oggiStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
-function aggiorna(){ if(S.vista==='profilo') return; if(S.vista==='miei') vistaTurni(); else { vistaCal(); if(S.giorno) apriGiorno(S.giorno,true); } }
+function aggiorna(){ if(S.vista==='profilo') return; if(S.vista==='squadre') return vistaSquadre(); if(S.vista==='miei') vistaTurni(); else { vistaCal(); if(S.giorno) apriGiorno(S.giorno,true); } }
 function sovrapposti(t){ if(!t) return []; return S.tutti.filter(x=>x.id!==t.id && x.data===t.data && !x.annullato && x.candidati.some(sonoIo)
   && hm(x.ora_inizio)<hm(t.ora_fine) && hm(t.ora_inizio)<hm(x.ora_fine)); }
 function mesiConTurni(){ return [...new Set(S.turni.map(t=>t.data.slice(0,7)))].sort(); }

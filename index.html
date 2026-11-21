@@ -687,7 +687,7 @@ function cardEvento(e, turni){
     <div class="azioni"><button class="btn pic ${aperto?'':'pri'}" onclick="apriEvento('${key}',${!aperto})">${aperto?'Nascondi turni':'Mostra turni'}</button>
       ${e && validi.length>pubb?`<button class="btn pic pri" onclick="pubblicaEvento('${e.id}')">Pubblica squadre (${validi.length-pubb})</button>`:''}
       ${e && pubb?`<button class="btn pic" onclick="avvisaEvento('${e.id}')">Avvisa su WhatsApp</button><button class="btn pic" onclick="ritiraEvento('${e.id}')">Ritira squadre (${pubb})</button>`:''}
-      ${e?`<button class="btn pic ${e.mostra_colleghi?'pri':''}" aria-pressed="${!!e.mostra_colleghi}" title="Se acceso, chi è in squadra vede chi lavora con lui quel giorno" onclick="colleghiEvento('${e.id}')">Colleghi visibili: ${e.mostra_colleghi?'sì':'no'}</button>`:''}
+      ${e?`<button class="btn pic ${e.mostra_colleghi?'pri':''}" aria-pressed="${!!e.mostra_colleghi}" title="Se acceso, chi è in squadra vede chi lavora con lui quel giorno" onclick="colleghiEvento('${e.id}')">Colleghi visibili: ${e.mostra_colleghi?'sì':'no'}</button><button class="btn pic ${e.squadre_pubbliche?'pri':''}" aria-pressed="${!!e.squadre_pubbliche}" title="Se acceso, nel calendario tutti i collaboratori vedono la scheda Squadre con tutti i turni dell'evento e chi c'è" onclick="squadrePerTutti('${e.id}')">Squadre per tutti: ${e.squadre_pubbliche?'sì':'no'}</button>`:''}
       ${e?`<button class="btn pic" onclick="apriCalEvento('${e.id}')">Calendario posti</button><button class="btn pic" onclick="formEvento('${e.id}')">Modifica evento</button><details class="menu"><summary class="btn pic" aria-label="Altre azioni">⋯</summary><div class="menu-b"><button class="btn pic del" onclick="eliminaEvento('${e.id}')">Elimina evento</button></div></details>`:''}</div>`;
   if(aperto && turni.length) h+='<div class="ev-giorni">'+[...new Set(turni.map(t=>t.data))].map(g=>{
     const [y,m,d]=g.split('-').map(Number), giorno=new Date(y,m-1,d).toLocaleDateString('it-IT',{weekday:'short',day:'numeric',month:'short'});
@@ -1715,6 +1715,24 @@ async function colleghiEvento(id){
   if(errore(r.error)) return;
   toast(val?'Colleghi visibili: i ragazzi in squadra vedono chi lavora con loro.':'Colleghi nascosti: ognuno vede solo i propri turni.'); ricarica();
 }
+// interruttore dell'evento: se acceso, nel calendario dei ragazzi c'è la scheda "Squadre" con tutti i turni dell'evento e chi c'è
+const linkSquadre = () => new URL('calendario.html?vista=squadre', location.href).href;
+async function squadrePerTutti(id){
+  const e=(S.eventi||[]).find(x=>x.id===id); if(!e) return;
+  const val=!e.squadre_pubbliche;
+  if(!confirm(val
+    ? 'Accendere “Squadre per tutti” per “'+e.nome+'”?\n\nNel calendario tutti i collaboratori iscritti vedranno la scheda Squadre: tutti i turni dell\'evento da oggi in poi e, per le squadre pubblicate, chi c\'è (solo i nomi).'
+    : 'Spegnere “Squadre per tutti” per “'+e.nome+'”?\n\nLa scheda Squadre non mostrerà più questo evento.')) return;
+  const r=await sb.from('tp_eventi').update({squadre_pubbliche:val}).eq('id',id);
+  if(r.error && /squadre_pubbliche/i.test(r.error.message||'')){ toast('Prima va eseguito sql-squadre-visibili.sql nel database.',true); return; }
+  if(errore(r.error)) return;
+  await ricarica();
+  if(val) apriDialog('Squadre per tutti', `<p style="margin:0 0 10px">Fatto. Manda questo link nel gruppo dei collaboratori: apre il calendario sulla scheda <b>Squadre</b>, con tutti i turni di “${esc(e.nome)}” e chi c'è. Si aggiorna da solo quando pubblicate o cambiate una squadra.</p>
+    <p class="note" style="word-break:break-all;margin:0 0 8px">${esc(linkSquadre())}</p>
+    <div class="azioni" style="margin:0"><button type="button" class="btn pic" onclick="copia(linkSquadre())">Copia link</button>
+      <a class="btn pic pri" style="text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent('Qui trovate tutti i turni del '+e.nome+' con le squadre, sempre aggiornati: '+linkSquadre())}">Manda su WhatsApp</a></div>`, null, null, 'Chiudi');
+  else toast('Squadre per tutti spento.');
+}
 // rimette in bozza tutte le squadre dell'evento (anche dei mesi non visualizzati): le assegnazioni restano
 async function ritiraEvento(id){
   const e=(S.eventi||[]).find(x=>x.id===id); if(!e) return;
@@ -1956,6 +1974,8 @@ function formLinkCalendario(){
     { t:'Solo Christmas', url:base+'?solo=christmas', msg:'Ciao! Qui trovi i turni del Christmas World: tocca quelli che puoi fare per candidarti e controlla la tua squadra. ' },
     { t:'Tutto insieme', url:base+'?solo=tutto', msg:'Ciao! Qui trovi il calendario dei turni: tocca quelli che puoi fare per candidarti e controlla la tua squadra. ' },
   ];
+  // la scheda Squadre c'è solo se almeno un evento ha "Squadre per tutti" acceso
+  if((S.eventi||[]).some(e=>e.squadre_pubbliche)) link.push({ t:'Squadre (tutti i turni con chi c\'è)', url:base+'?vista=squadre', msg:'Qui trovate tutti i turni con le squadre, sempre aggiornati: ' });
   apriDialog('Link calendario', `
     <p style="margin:0 0 10px">Al primo accesso i collaboratori scrivono i propri dati (chi è già iscritto viene riconosciuto) e il telefono se li ricorda. Ogni link apre il calendario già filtrato; in alto c'è comunque il tasto per passare all'altro.</p>
     ${link.map(l=>`<div style="border:1px solid var(--line);border-radius:10px;padding:10px;margin:0 0 10px">
