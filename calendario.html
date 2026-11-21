@@ -529,6 +529,27 @@ document.addEventListener('visibilitychange', async ()=>{
   const y=window.scrollY; await ricarica(); aggiorna(); window.scrollTo(0,y);
 });
 
+// dal telefono: scorrendo col dito a sinistra/destra si passa al mese dopo/prima (usa gli stessi tasti ‹ ›)
+(()=>{
+  let x0=null, y0=0, t0=0;
+  document.addEventListener('touchstart', e=>{
+    x0=null;
+    if(e.touches.length!==1 || document.querySelector('.velo')) return;
+    for(let el=e.target; el && el!==document.body; el=el.parentElement){
+      if(el.matches('input,textarea,select')) return;
+      if(el.scrollWidth>el.clientWidth+2 && /auto|scroll/.test(getComputedStyle(el).overflowX)) return;
+    }
+    x0=e.touches[0].clientX; y0=e.touches[0].clientY; t0=Date.now();
+  }, {passive:true});
+  document.addEventListener('touchend', e=>{
+    if(x0===null) return;
+    const dx=e.changedTouches[0].clientX-x0, dy=e.changedTouches[0].clientY-y0; x0=null;
+    if(Date.now()-t0>700 || Math.abs(dx)<60 || Math.abs(dx)<Math.abs(dy)*1.5) return;
+    const b=document.querySelector(`button[aria-label="${dx<0?'Mese successivo':'Mese precedente'}"]`);
+    if(b && !b.disabled) b.click();
+  }, {passive:true});
+})();
+
 avvio();
 </script>
 </body>
