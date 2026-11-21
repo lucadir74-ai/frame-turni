@@ -2257,7 +2257,7 @@ function vistaCollab(){
   const plur={F:['fotografo','fotografi'], S:['stampatore','stampatori'], FS:['foto e stampa','foto e stampa']};
   const perRuolo=Object.keys(RUOLI).map(k=>{ const n=att.filter(c=>c.ruolo===k).length; return n?n+' '+(plur[k]||[k,k])[n===1?0:1]:''; }).filter(Boolean).join(' · ');
   const conta = S.collab.length ? `<span class="note" style="margin-right:auto"><b style="color:var(--ink);font-size:1rem">${S.collab.length} ${S.collab.length===1?'iscritto':'iscritti'}</b>`
-    + `${nonAtt?` · ${att.length} attivi, ${nonAtt} non attivi`:''}${perRuolo?`<br>${esc(perRuolo)}`:''}</span>` : '<span class="spazio"></span>';
+    + `${nonAtt?` · ${att.length} ${att.length===1?'attivo':'attivi'}, ${nonAtt} non ${nonAtt===1?'attivo':'attivi'}`:''}${perRuolo?`<br>${esc(perRuolo)}`:''}</span>` : '<span class="spazio"></span>';
   let h='<div class="barra">'+conta+'<button class="btn pri" onclick="formCollab()">Nuovo collaboratore</button></div>';
   if(!S.collab.length) h+='<div class="vuoto">Nessun collaboratore. Aggiungi il primo.</div>';
   // dal più recente iscritto in alto (a parità di data, in ordine di nome)
