@@ -667,13 +667,20 @@ function cardEvento(e, turni){
   if(!S.aperti) S.aperti={};
   const aperto = key in S.aperti ? S.aperti[key] : turni.length<=8;
   const validi=turni.filter(t=>!t.annullato), ann=turni.length-validi.length;
-  const coperti=validi.filter(t=>S.cand.filter(k=>k.turno_id===t.id).length >= (t.fotografi||0)+(t.stampatori||0)).length;
+  // giornate scoperte, da oggi in poi: stesso calcolo del Calendario posti (persone contate una volta sola, ruolo foto/stampa,
+  // insieme agli altri turni di quel giorno); una giornata è scoperta se almeno un turno di questo evento resta senza persone
+  const o=oggi(), giorniFut=[...new Set(validi.map(t=>t.data))].filter(d=>d>=o).sort();
+  const scoperte=giorniFut.filter(d=>{ const fb=fabbisognoGiorno(S.turni.filter(t=>t.data===d)); return validi.some(t=>t.data===d && fb.corti.has(t.id)); });
+  const breveG=d=>{ const [y,m,g]=d.split('-').map(Number); return new Date(y,m-1,g).toLocaleDateString('it-IT',{weekday:'short',day:'numeric'}); };
+  const statCand = !giorniFut.length ? '' : scoperte.length
+    ? `<span class="manca" title="${esc(scoperte.map(breveG).join(', '))}">${scoperte.length===1?'1 giornata scoperta':scoperte.length+' giornate scoperte'}: ${esc(scoperte.slice(0,6).map(breveG).join(', '))}${scoperte.length>6?'…':''}</span>`
+    : `<span class="pieno">✓ ${giorniFut.length===1?'giornata coperta':'tutte le giornate coperte'}</span>`;
   const pubb=validi.filter(t=>t.pubblicato).length;
   const fasce=e ? testoFasce(e) : '';
   let h=`<div class="evento" style="--c:${coloreSede(p)}">
     <div class="ev-head"><div><b>${esc(e?.nome||p.nome)}</b>${e && e.nome && e.nome!==p.nome?` <span class="note">${esc(p.nome)}</span>`:''}
       <div class="note">${e?periodoEvento(e)+(fasce?' · '+fasce:'')+' · '+e.fotografi+' foto + '+e.stampatori+' stampa':'Turni senza evento'}</div></div></div>
-    <div class="ev-stat"><span>${turni.length} turni questo mese</span>${validi.length?`<span class="${coperti>=validi.length?'pieno':'manca'}">candidati sufficienti ${coperti}/${validi.length}</span><span>squadre pubblicate ${pubb}/${validi.length}</span>`:''}${ann?`<span class="ko">annullati ${ann}</span>`:''}</div>
+    <div class="ev-stat"><span>${turni.length} turni questo mese</span>${validi.length?`${statCand}<span>squadre pubblicate ${pubb}/${validi.length}</span>`:''}${ann?`<span class="ko">annullati ${ann}</span>`:''}</div>
     <div class="azioni"><button class="btn pic ${aperto?'':'pri'}" onclick="apriEvento('${key}',${!aperto})">${aperto?'Nascondi turni':'Mostra turni'}</button>
       ${e && validi.length>pubb?`<button class="btn pic pri" onclick="pubblicaEvento('${e.id}')">Pubblica squadre (${validi.length-pubb})</button>`:''}
       ${e && pubb?`<button class="btn pic" onclick="avvisaEvento('${e.id}')">Avvisa su WhatsApp</button><button class="btn pic" onclick="ritiraEvento('${e.id}')">Ritira squadre (${pubb})</button>`:''}
