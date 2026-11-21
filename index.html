@@ -583,7 +583,7 @@ async function caricaMese(){
       sb.from('tp_spese').select('*').in('turno_id', ids)
     ]);
     if(errore(r.error)||errore(i.error)||errore(sp.error)||errore(kc.error)) return;
-    S.cand=kc.data; S.ass=r.data; S.incassi=i.data; S.spese=sp.data; S.compensi=[];
+    S.cand=estendiCand(kc.data); S.ass=r.data; S.incassi=i.data; S.spese=sp.data; S.compensi=[];
     if(S.ass.length){
       const k = await sb.from('tp_compensi').select('*').in('assegnazione_id', S.ass.map(x=>x.id));
       if(errore(k.error)) return; S.compensi=k.data;
@@ -928,6 +928,19 @@ function sedeNascosta(id){ const p=piscinaById(id); if(!p) return false; return 
 function giaInSquadraAltrove(cid,t){   // la persona è in squadra in un altro turno dello stesso giorno, a orari sovrapposti
   return S.ass.filter(a=>a.collaboratore_id===cid && a.turno_id!==t.id).map(a=>S.turni.find(x=>x.id===a.turno_id))
     .find(x=>x && !x.annullato && x.data===t.data && hm(x.ora_inizio)<hm(t.ora_fine) && hm(t.ora_inizio)<hm(x.ora_fine));
+}
+// Sedi nascoste: chi ha dato disponibilità per TUTTO IL GIORNO conta come candidato anche nei turni di sola mattina
+// e solo pomeriggio di quel giorno. Sono candidature "virtuali" (virtuale:true, senza id): non stanno nel database,
+// si ricalcolano dalla G ogni volta. Togliendo la G spariscono anche loro.
+function estendiCand(lista){
+  const reali=(lista||[]).filter(x=>!x.virtuale), out=[...reali];
+  const nasc=S.turni.filter(t=>!t.annullato && sedeNascosta(t.piscina_id));
+  const g={};   // data → Set di chi è candidato a un turno "tutto il giorno"
+  reali.forEach(k=>{ const t=nasc.find(x=>x.id===k.turno_id); if(t && fasciaDi(t)==='G') (g[t.data]=g[t.data]||new Set()).add(k.collaboratore_id); });
+  nasc.filter(t=>g[t.data] && fasciaDi(t)!=='G').forEach(t=>g[t.data].forEach(cid=>{
+    if(!reali.some(k=>k.turno_id===t.id && k.collaboratore_id===cid)) out.push({turno_id:t.id, collaboratore_id:cid, virtuale:true});
+  }));
+  return out;
 }
 // testo per il passaggio del mouse: dove è già in squadra
 function testoAltrove(x){ return 'Già in squadra a '+(piscinaById(x.piscina_id)||{nome:'?'}).nome+', '+nomeGiorno(x.data)+' '+hm(x.ora_inizio)+'–'+hm(x.ora_fine); }
@@ -2129,12 +2142,13 @@ function giornoCand(d){
 function elencoPersone(t){
   const k=S.cand.filter(x=>x.turno_id===t.id), ass=S.ass.filter(a=>a.turno_id===t.id);
   const ids=[...new Set([...ass.map(a=>a.collaboratore_id), ...k.map(x=>x.collaboratore_id)])];
-  const persone=ids.map(id=>({ c:collabById(id)||{id,nome:'?'}, a:ass.find(x=>x.collaboratore_id===id), cand:k.some(x=>x.collaboratore_id===id) }))
+  const persone=ids.map(id=>({ c:collabById(id)||{id,nome:'?'}, a:ass.find(x=>x.collaboratore_id===id), cand:k.some(x=>x.collaboratore_id===id),
+      virt:k.some(x=>x.collaboratore_id===id && x.virtuale) }))
     .sort((x,y)=>(!!y.a-!!x.a) || x.c.nome.localeCompare(y.c.nome));
   const altri=S.collab.filter(c=>c.attivo && !ids.includes(c.id)).sort((a,b)=>a.nome.localeCompare(b.nome));
   const nasc=sedeNascosta(t.piscina_id);
-    const riga = ({c,a,cand}) => {
-      const info=`<small class="note">${RUOLI[c.ruolo]||''} · <span class="stelle">${stelle(c.livello||0)}</span>${c.auto?' · 🚗':''}</small>`;
+    const riga = ({c,a,cand,virt}) => {
+      const info=`<small class="note">${RUOLI[c.ruolo]||''} · <span class="stelle">${stelle(c.livello||0)}</span>${c.auto?' · 🚗':''}${virt?' · <span title="Si è candidato per tutto il giorno: vale anche per mattina e pomeriggio">disponibile tutto il giorno</span>':''}</small>`;
       // piscine: chi è già in squadra in un'altra sede alla stessa ora resta candidato qui, ma in grigio e senza pulsanti
       const fuori = !a && nasc && giaInSquadraAltrove(c.id,t);
       if(fuori) return `<div class="gcr fuori" title="${esc(testoAltrove(fuori))}"><div class="gcn"><b>${esc(c.nome)}</b> ${info}<div class="note">In squadra a <b>${esc((piscinaById(fuori.piscina_id)||{nome:'?'}).nome)}</b> ${hm(fuori.ora_inizio)}–${hm(fuori.ora_fine)}</div></div></div>`;
@@ -2146,7 +2160,7 @@ function elencoPersone(t){
         ? `<button type="button" class="btn pic del" onclick="togliSquadraGC('${a.id}')">Togli dalla squadra</button>`
         : (c.ruolo!=='S'?`<button type="button" class="btn pic" onclick="assegnaGC('${t.id}','${c.id}','F')">Foto</button>`:'')
           + (c.ruolo!=='F'?`<button type="button" class="btn pic" onclick="assegnaGC('${t.id}','${c.id}','S')">Stampa</button>`:'')
-          + `<button type="button" class="btn pic del" onclick="ritiraCandGC('${c.id}','${t.id}')">Togli candidatura</button>`;
+          + (virt ? '' : `<button type="button" class="btn pic del" onclick="ritiraCandGC('${c.id}','${t.id}')">Togli candidatura</button>`);
       return `<div class="gcr ${a?'sq':''}"><div class="gcn">${a?'<b class="stella" title="In squadra">★</b> ':''}<b>${esc(c.nome)}</b> ${info}${sq}</div><div class="gcb">${bott}</div></div>`;
     };
   return `<div class="gcl">${persone.map(riga).join('') || '<div class="note">Nessun candidato per ora</div>'}</div>
@@ -2217,11 +2231,12 @@ function confermaTogliCand(cid,tid){
 }
 async function toggleCand(cid,tid){
   const c=S.cand.find(x=>x.collaboratore_id===cid&&x.turno_id===tid);
+  if(c && c.virtuale){ toast((collabById(cid)||{nome:'Questa persona'}).nome+' è disponibile tutto il giorno: per toglierla, togli la candidatura dal turno di tutto il giorno.',true); return; }
   if(c && !confermaTogliCand(cid,tid)) return;
   const r = c ? await sb.from('tp_candidature').delete().eq('id',c.id)
               : await sb.from('tp_candidature').insert({collaboratore_id:cid,turno_id:tid}).select().single();
   if(errore(r.error)) return;
-  if(c) S.cand=S.cand.filter(x=>x!==c); else S.cand.push(r.data);
+  S.cand = estendiCand(c ? S.cand.filter(x=>x!==c) : [...S.cand, r.data]);
   if(S.tab!=='disponibilita'){ disegna(); return; }   // da Eventi: ridisegna la pagina e il dettaglio del turno
   const sx=document.querySelector('.griglia')?.scrollLeft; vistaDisp(); const g=document.querySelector('.griglia'); if(g) g.scrollLeft=sx||0;
   renderGC();
