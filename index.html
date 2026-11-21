@@ -644,9 +644,7 @@ function vistaTurni(){
   // su telefono i bottoni secondari stanno in "Altre azioni", su computer si vedono tutti
   let h = barraMese(`<div class="altre"><button type="button" class="btn altre-t" onclick="this.parentNode.classList.toggle('on')" aria-label="Altre azioni">Altre azioni ▾</button><div class="altre-b" onclick="this.parentNode.classList.remove('on')">
     <button class="btn" onclick="formLinkCalendario()">Link calendario</button><button class="btn" ${bozze?'':'disabled'} onclick="formProponi(false)">Proponi squadre</button><button class="btn" ${bozze?'':'disabled'} onclick="pubblicaMese()">Pubblica ${bozze||''} squadre del mese</button><button class="btn" onclick="formModificaBlocco()">Modifica più turni</button></div></div><button class="btn pri" onclick="formTurno()">Nuovo evento</button>`);
-  if(S.ritiri && S.ritiri.length) h+='<div class="ritiri"><b>Ritiri e rifiuti da gestire</b>'+S.ritiri.map(r=>{const t=r.tp_turni||{}; const c=collabById(r.collaboratore_id)||{nome:'?'};
-    const cosa = r.tipo==='rifiuto' ? 'ha rifiutato il turno' : 'si è ritirato/a da';
-    return `<div class="rit"><span>${esc(c.nome)} ${cosa} <b>${esc((piscinaById(t.piscina_id)||{nome:'?'}).nome)}</b>, ${t.data?nomeGiorno(t.data):''} ${hm(t.ora_inizio)}–${hm(t.ora_fine)}: era in squadra, il posto è scoperto.</span><button class="btn pic" onclick="ritiroVisto('${r.id}')">Visto</button></div>`}).join('')+'</div>';
+  if(S.ritiri && S.ritiri.length) h+=htmlRitiri();
   const sr=senzaRisposta();
   if(sr.length) h+='<div class="attese"><b>Non hanno ancora risposto (da più di 24 ore)</b>'+sr.map(({a,t})=>{ const c=collabById(a.collaboratore_id)||{nome:'?'};
     return `<div class="rit"><span>${esc(c.nome)} · <b>${esc((piscinaById(t.piscina_id)||{nome:'?'}).nome)}</b>, ${nomeGiorno(t.data)} ${hm(t.ora_inizio)}–${hm(t.ora_fine)}</span></div>`; }).join('')
@@ -2214,9 +2212,34 @@ async function toggleCand(cid,tid){
   const sx=document.querySelector('.griglia')?.scrollLeft; vistaDisp(); const g=document.querySelector('.griglia'); if(g) g.scrollLeft=sx||0;
   renderGC();
 }
-async function ritiroVisto(id){
-  if(errore((await sb.from('tp_ritiri').update({visto:true}).eq('id',id)).error)) return;
-  S.ritiri=S.ritiri.filter(x=>x.id!==id); vistaTurni();
+// ritiri e rifiuti raggruppati per persona + sede + tipo: una riga sola con l'elenco dei giorni e un solo "Visto"
+function htmlRitiri(){
+  const gruppi={};
+  S.ritiri.forEach(r=>{ const t=r.tp_turni||{}; const k=r.collaboratore_id+'|'+(t.piscina_id||'')+'|'+(r.tipo||'ritiro'); (gruppi[k]=gruppi[k]||[]).push(r); });
+  const orario=t=>hm(t.ora_inizio)+'–'+hm(t.ora_fine);
+  return '<div class="ritiri"><b>Ritiri e rifiuti da gestire</b>'+Object.values(gruppi).map(l=>{
+    l.sort((a,b)=>{ const x=a.tp_turni||{}, y=b.tp_turni||{}; return (x.data||'').localeCompare(y.data||'') || hm(x.ora_inizio).localeCompare(hm(y.ora_inizio)); });
+    const r0=l[0], t0=r0.tp_turni||{}, rifiuto=r0.tipo==='rifiuto';
+    const nome=esc((collabById(r0.collaboratore_id)||{nome:'?'}).nome), sede='<b>'+esc((piscinaById(t0.piscina_id)||{nome:'?'}).nome)+'</b>';
+    const ids=l.map(r=>r.id).join(',');
+    let testo;
+    if(l.length===1){
+      testo = `${nome} ${rifiuto?'ha rifiutato il turno':'si è ritirato/a da'} ${sede}, ${t0.data?nomeGiorno(t0.data):''} ${orario(t0)}: era in squadra, il posto è scoperto.`;
+    } else {
+      const unico = new Set(l.map(r=>orario(r.tp_turni||{}))).size===1;
+      // giorni divisi per mese: "1, 2, 3 dicembre, 4 gennaio"; l'orario accanto al giorno solo se cambia
+      const mesi=[]; l.forEach(r=>{ const t=r.tp_turni||{}; const m=(t.data||'').slice(0,7); let g=t.data?String(Number(t.data.slice(8,10))):'?'; if(!unico) g+=' ('+orario(t)+')';
+        if(!mesi.length || mesi[mesi.length-1].m!==m) mesi.push({m,g:[]}); mesi[mesi.length-1].g.push(g); });
+      const giorni=mesi.map(x=>x.g.join(', ')+(x.m?' '+new Date(Number(x.m.slice(0,4)),Number(x.m.slice(5,7))-1,1).toLocaleDateString('it-IT',{month:'long'}):'')).join(', ');
+      testo = `${nome} ${rifiuto?`ha rifiutato ${l.length} turni di`:'si è ritirato/a da'} ${sede}${rifiuto?'':` in ${l.length} giornate`}${unico?' ('+orario(t0)+')':''}: <b>${giorni}</b>. Era in squadra, i posti sono scoperti.`;
+    }
+    return `<div class="rit"><span>${testo}</span><button class="btn pic" onclick="ritiroVisto('${ids}')">Visto</button></div>`;
+  }).join('')+'</div>';
+}
+async function ritiroVisto(lista){
+  const ids=String(lista).split(',');
+  if(errore((await sb.from('tp_ritiri').update({visto:true}).in('id',ids)).error)) return;
+  S.ritiri=S.ritiri.filter(x=>!ids.includes(String(x.id))); vistaTurni();
 }
 
 // ---------- COLLABORATORI ----------
