@@ -143,7 +143,8 @@ body.tab-full .griglia.schermo thead th.nome{z-index:3}
 .calo .num{font:700 .85rem var(--fc);display:flex;justify-content:space-between;align-items:center;gap:2px}
 .calo .num .mz{background:var(--red);color:#fff;border-radius:999px;padding:0 6px;font-size:.75rem;line-height:1.35}
 .calo .fab{font:600 .74rem var(--fc);line-height:1.3;border-radius:6px;padding:1px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.calo .fab.ko{background:var(--red);color:#fff}.calo .fab.ok{color:var(--ok)}
+.calo .fab.ko{background:var(--red);color:#fff}.calo .fab.ok{color:var(--ok)}.calo .fab.neu{color:var(--muted,#666)}
+.calo .gg.pubb,.calo .gg.pubb:hover{border:2px solid var(--ok);padding:3px 4px}
 .calo .fab .sm{display:none}
 .scop{display:flex;flex-wrap:wrap;gap:6px;align-items:center;background:#FDECEC;border:1px solid var(--red);border-radius:10px;padding:8px 10px;margin:0 0 10px}
 .scop button{font:600 .85rem var(--fc);border:1px solid var(--red);background:#fff;border-radius:999px;padding:3px 10px;cursor:pointer}
@@ -2216,11 +2217,16 @@ function calendarioCand(turni){
     const d=S.mese+'-'+String(g).padStart(2,'0');
     const tg=turni.filter(t=>t.data===d).sort((a,b)=>(piscinaById(a.piscina_id)?.nome||'').localeCompare(piscinaById(b.piscina_id)?.nome||'')||hm(a.ora_inizio).localeCompare(hm(b.ora_inizio)));
     const fb=fabbisognoGiorno(tg), inc=fb.manca>0;
+    // squadre della giornata: ✓ = tutti i turni (non annullati) hanno la squadra completa; bordo verde = tutte pubblicate
+    const tv=tg.filter(t=>!t.annullato);
+    const assegnata = tv.length>0 && tv.every(t=>S.ass.filter(a=>a.turno_id===t.id).length>=(t.fotografi||0)+(t.stampatori||0));
+    const pubblicata = tv.length>0 && tv.every(t=>t.pubblicato);
+    const sp = assegnata ? ' ✓' : '';
     // sotto il numero: quante persone servono quel giorno (nel momento più pieno) e quante ne mancano
     const fab = !fb.posti ? '' : inc
       ? `<div class="fab ko" title="${esc(testoManca(fb))}"><span class="lg">mancano <b>${fb.manca}</b> su ${fb.posti}</span><span class="sm"><b>${fb.manca}</b>/${fb.posti}</span></div>`
-      : `<div class="fab ok" title="Servono ${fb.posti} persone: coperte"><span class="lg">servono ${fb.posti} ✓</span><span class="sm">${fb.posti} ✓</span></div>`;
-    h+=`<div class="gg ${tg.length?'':'off'} ${d===o?'oggi':''} ${inc?'inc':''}" ${tg.length?`onclick="giornoCand('${d}')" role="button" tabindex="0"`:''}><div class="num">${g}</div>${fab}`
+      : `<div class="fab ${assegnata?'ok':'neu'}" title="Servono ${fb.posti} persone${assegnata?': squadre assegnate':': candidati sufficienti, squadre ancora da completare'}${pubblicata?' e pubblicate':''}"><span class="lg">servono ${fb.posti}${sp}</span><span class="sm">${fb.posti}${sp}</span></div>`;
+    h+=`<div class="gg ${tg.length?'':'off'} ${d===o?'oggi':''} ${inc?'inc':''} ${pubblicata&&!inc?'pubb':''}"${tg.length?`onclick="giornoCand('${d}')" role="button" tabindex="0"`:''}><div class="num">${g}</div>${fab}`
       + tg.map(t=>{
           const p=piscinaById(t.piscina_id)||{nome:'?'}; const k=S.cand.filter(x=>x.turno_id===t.id); const posti=(t.fotografi||0)+(t.stampatori||0);
           const nomi=k.map(x=>{ const sq=S.ass.some(a=>a.turno_id===t.id&&a.collaboratore_id===x.collaboratore_id); return (sq?'★':'')+esc(nomeC(x.collaboratore_id).split(' ')[0]); });
@@ -2230,7 +2236,7 @@ function calendarioCand(turni){
             <span class="nm">${nomi.slice(0,3).join(', ')}${nomi.length>3?' +'+(nomi.length-3):''}</span></div>`;
         }).join('') + '</div>';
   }
-  return h+'</div><p class="note">Clic su un giorno per vedere e gestire i candidati. M = mattina, P = pomeriggio, G = tutto il giorno. Conteggio verde = candidati sufficienti per i posti, arancione = ne mancano (anche quando le stesse persone si sono candidate a più piscine alla stessa ora). Sotto il numero del giorno: «servono N» = persone necessarie nel momento più pieno della giornata; bordo rosso e «mancano X su N» = giornata scoperta, X persone ancora da trovare (ognuno contato una volta sola, con il suo ruolo foto/stampa). ★ davanti a un nome = in squadra.</p>';
+  return h+'</div><p class="note">Clic su un giorno per vedere e gestire i candidati. M = mattina, P = pomeriggio, G = tutto il giorno. Conteggio verde = candidati sufficienti per i posti, arancione = ne mancano (anche quando le stesse persone si sono candidate a più piscine alla stessa ora). Sotto il numero del giorno: «servono N» = persone necessarie nel momento più pieno della giornata, con ✓ quando le squadre di tutti i turni sono assegnate; bordo verde = squadre del giorno pubblicate; bordo rosso e «mancano X su N» = giornata scoperta, X persone ancora da trovare (ognuno contato una volta sola, con il suo ruolo foto/stampa). ★ davanti a un nome = in squadra.</p>';
 }
 function giornoCand(d){
   apriDialog(nomeGiorno(d).replace(/^./,c=>c.toUpperCase()), `<div id="gc" data-d="${d}"></div>`);
