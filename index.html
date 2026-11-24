@@ -1430,7 +1430,7 @@ async function formAvvisi(ids){
     <p class="note" style="margin:14px 0 4px"><b>Oppure in privato</b>, una persona alla volta (comodo per chi non risponde):</p>
     <div id="avv"></div>`, null, null, 'Fatto');
   renderAvvisi();
-  S.imgSquadre=[]; renderImmagini(); preparaImmagini();
+  S.imgSquadre=[]; renderImmagini(); preparaImmagini(); preparaImmaginiPersone();
 }
 // messaggio per il gruppo: i turni raggruppati per giorno, con la squadra di ognuno.
 // Se i giorni sono tanti si divide per settimana (lun–dom), così ogni messaggio resta leggibile e il link non è troppo lungo.
@@ -1484,7 +1484,9 @@ async function canvasSquadre(b){
   const sc=2, pad=24, titH=70, headH=piuSedi?78:62, rowH=34, colW=50;
   const m=document.createElement('canvas').getContext('2d'); m.font='600 15px '+F;
   const nameW=Math.max(150, ...pers.map(c=>m.measureText(c.nome).width+28));
-  const W=pad*2+nameW+colW*turni.length, H=titH+headH+rowH*pers.length+56+pad;
+  // larghezza minima: con pochi turni (tabella di una sola persona) titolo e legenda non devono tagliarsi
+  m.font='700 22px '+F; const titW=m.measureText((b.titolo||'Squadre')+' · '+nomeMese(b.mese)+(b.parte?' · '+b.parte:'')).width;
+  const W=Math.max(pad*2+nameW+colW*turni.length, pad*2+titW+10, 440), H=titH+headH+rowH*pers.length+56+pad;
   const cv=document.createElement('canvas'); cv.width=W*sc; cv.height=H*sc;
   const x=cv.getContext('2d'); x.scale(sc,sc);
   const rr=(X,Y,w,h,r)=>{ x.beginPath(); x.moveTo(X+r,Y); x.arcTo(X+w,Y,X+w,Y+h,r); x.arcTo(X+w,Y+h,X,Y+h,r); x.arcTo(X,Y+h,X,Y,r); x.arcTo(X,Y,X+w,Y,r); x.closePath(); };
@@ -1494,7 +1496,7 @@ async function canvasSquadre(b){
   // titolo
   const nomiSedi=sedi.map(id=>(piscinaById(id)||{nome:'?'}).nome).join(', ');
   x.fillStyle=INK; x.font='700 22px '+F; x.textBaseline='alphabetic';
-  x.fillText('Squadre · '+nomeMese(b.mese).replace(/^./,c=>c.toUpperCase())+(b.parte?' · '+b.parte:''), pad, 40);
+  x.fillText((b.titolo||'Squadre')+' · '+nomeMese(b.mese).replace(/^./,c=>c.toUpperCase())+(b.parte?' · '+b.parte:''), pad, 40);
   x.fillStyle=MUTED; x.font='500 14px '+F; x.fillText(nomiSedi, pad, 60);
   const y0=titH, x0=pad+nameW;
   // intestazione colonne
@@ -1591,6 +1593,48 @@ async function segnaAvvisatoGruppo(i){
   if(r.error) console.warn(r.error);
   ass.forEach(a=>{ const b=S.ass.find(z=>z.id===a.id); if(b) b.avvisato_il=quando; });
 }
+// tabella di UNA persona: solo la sua riga e solo i suoi turni (gli altri collaboratori non compaiono).
+// Un'immagine per mese, divisa in 1–15 / dal 16 se i turni sono più di 16, come la tabella del gruppo.
+function blocchiPersona(x){
+  const mesi={}; x.r.forEach(y=>(mesi[y.t.data.slice(0,7)]=mesi[y.t.data.slice(0,7)]||[]).push({t:y.t, ass:[{a:y.a, c:x.c}]}));
+  const tit='Turni di '+String(x.c.nome||'?').split(' ')[0];
+  return Object.entries(mesi).sort().flatMap(([m,l])=>{
+    if(l.length<=16) return [{mese:m,turni:l,parte:'',titolo:tit}];
+    return [{mese:m,turni:l.filter(z=>+z.t.data.slice(8)<=15),parte:'1–15',titolo:tit},{mese:m,turni:l.filter(z=>+z.t.data.slice(8)>15),parte:'dal 16',titolo:tit}].filter(z=>z.turni.length);
+  });
+}
+async function immaginiPersona(x){
+  const out=[], base=String(x.c.nome||'turni').toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+  for(const b of blocchiPersona(x)){
+    const cv=await canvasSquadre(b), blob=await new Promise(r=>cv.toBlob(r,'image/png'));
+    const nome='turni-'+base+'-'+nomeMese(b.mese).replace(/\s+/g,'-')+(b.parte?'-'+b.parte.replace(/\D+/g,'-').replace(/^-|-$/g,''):'')+'.png';
+    out.push({ file:new File([blob],nome,{type:'image/png'}), url:URL.createObjectURL(blob) });
+  }
+  return out;
+}
+// messaggio privato con la tabella dei suoi turni: sul telefono si condivide (immagine + testo, si sceglie la chat);
+// sul computer si scarica l'immagine e si apre la chat della persona con il testo, l'immagine si allega a mano
+async function mandaTabellaPersona(i){
+  const x=S.avvisi[i]; if(!x) return;
+  const im=x.img||(x.img=await immaginiPersona(x)), testo=testoAvviso(x.c,x.r), files=im.map(z=>z.file);
+  if(navigator.canShare && navigator.canShare({files})){
+    try{ await navigator.share({files, text:testo}); }
+    catch(e){ if(e.name==='AbortError') return; toast('Condivisione non riuscita.',true); return; }
+  } else {
+    const n=telefonoWa(x.c.telefono);
+    scaricaImmagini(im);
+    window.open('https://wa.me/'+(n||'')+'?text='+encodeURIComponent(testo),'_blank','noopener');
+    toast(im.length>1?'Tabelle scaricate: allegale nel messaggio.':'Tabella scaricata: allegala nel messaggio.');
+  }
+  segnaAvvisato(i);
+}
+async function vediTabellaPersona(i){
+  const x=S.avvisi[i]; if(!x) return;
+  const im=x.img||(x.img=await immaginiPersona(x));
+  apriDialog('Turni di '+x.c.nome, `<div class="img-prev">${im.map(z=>`<img src="${z.url}" alt="Turni di ${esc(x.c.nome)}" style="max-width:100%">`).join('')}</div>`, null, null, 'Chiudi');
+}
+// le immagini si preparano subito all'apertura della finestra: così il clic su "Con tabella" condivide/apre WhatsApp al volo
+async function preparaImmaginiPersone(){ const l=S.avvisi||[]; for(const x of l){ if(S.avvisi!==l) return; if(!x.img) x.img=await immaginiPersona(x); } }
 function renderAvvisi(){
   renderAvvisiGruppo();
   const box=document.getElementById('avv'); if(!box) return;
@@ -1598,7 +1642,7 @@ function renderAvvisi(){
     const mandato=x.r.every(y=>y.a.avvisato_il), si=x.r.every(y=>y.a.risposta==='si');
     const stato = si ? '<span class="ok">👁 visualizzato</span>' : mandato ? '✉ WhatsApp mandato · non ancora visualizzato' : '';
     return `<div class="cand"><span class="n">${esc(x.c.nome)}</span>
-      <span class="b">${n?`<a class="btn pic ${mandato?'':'pri'}" style="text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/${n}?text=${encodeURIComponent(testoAvviso(x.c,x.r))}" onclick="segnaAvvisato(${i})">WhatsApp</a>`:''}</span>
+      <span class="b"><button type="button" class="btn pic ${mandato?'':'pri'}" onclick="mandaTabellaPersona(${i})" title="Immagine con i suoi turni + messaggio">📊 Con tabella</button>${n?`<a class="btn pic" style="text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/${n}?text=${encodeURIComponent(testoAvviso(x.c,x.r))}" onclick="segnaAvvisato(${i})">Solo testo</a>`:''}<button type="button" class="btn pic" onclick="vediTabellaPersona(${i})" title="Apri l'immagine per controllarla">👁</button></span>
       <span class="d">${x.r.map(y=>esc(nomeGiorno(y.t.data)+' '+hm(y.t.ora_inizio)+'–'+hm(y.t.ora_fine)+' · '+((piscinaById(y.t.piscina_id)||{nome:'?'}).nome))).join('<br>')}
         ${stato?'<br>'+stato:''}${n?'':'<br><span class="ko">Nessun telefono nella scheda</span>'}</span></div>`; }).join('');
 }
