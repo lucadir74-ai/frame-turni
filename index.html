@@ -687,7 +687,7 @@ function cardEvento(e, turni){
     <div class="ev-stat"><span>${turni.length} turni questo mese</span>${validi.length?`${statCand}<span>squadre pubblicate ${pubb}/${validi.length}</span>`:''}${ann?`<span class="ko">annullati ${ann}</span>`:''}</div>
     <div class="azioni"><button class="btn pic ${aperto?'':'pri'}" onclick="apriEvento('${key}',${!aperto})">${aperto?'Nascondi turni':'Mostra turni'}</button>
       ${e && validi.length>pubb?`<button class="btn pic pri" onclick="pubblicaEvento('${e.id}')">Pubblica squadre (${validi.length-pubb})</button>`:''}
-      ${e && pubb?`<button class="btn pic" onclick="avvisaEvento('${e.id}')">Avvisa su WhatsApp</button><button class="btn pic" onclick="ritiraEvento('${e.id}')">Ritira squadre (${pubb})</button>`:''}
+      ${e && validi.length?`<button class="btn pic" onclick="avvisaEvento('${e.id}')">Avvisa su WhatsApp</button>`:''}${e && pubb?`<button class="btn pic" onclick="ritiraEvento('${e.id}')">Ritira squadre (${pubb})</button>`:''}
       ${e?`<button class="btn pic ${e.mostra_colleghi?'pri':''}" aria-pressed="${!!e.mostra_colleghi}" title="Se acceso, chi è in squadra vede chi lavora con lui quel giorno" onclick="colleghiEvento('${e.id}')">Colleghi visibili: ${e.mostra_colleghi?'sì':'no'}</button><button class="btn pic ${e.squadre_pubbliche?'pri':''}" aria-pressed="${!!e.squadre_pubbliche}" title="Se acceso, nel calendario tutti i collaboratori vedono la scheda Squadre con tutti i turni dell'evento e chi c'è" onclick="squadrePerTutti('${e.id}')">Squadre per tutti: ${e.squadre_pubbliche?'sì':'no'}</button>`:''}
       ${e?`<button class="btn pic" onclick="apriCalEvento('${e.id}')">Calendario posti</button><button class="btn pic" onclick="formEvento('${e.id}')">Modifica evento</button><details class="menu"><summary class="btn pic" aria-label="Altre azioni">⋯</summary><div class="menu-b"><button class="btn pic del" onclick="eliminaEvento('${e.id}')">Elimina evento</button></div></details>`:''}</div>`;
   if(aperto && turni.length) h+='<div class="ev-giorni">'+[...new Set(turni.map(t=>t.data))].map(g=>{
@@ -1401,8 +1401,9 @@ function testoAvviso(c, righe){
   const r = x => { const p=piscinaById(x.t.piscina_id)||{nome:'?'};
     return '• '+nomeGiorno(x.t.data)+', '+hm(x.t.ora_inizio)+'–'+hm(x.t.ora_fine)+' · '+p.nome+(p.indirizzo?' ('+p.indirizzo+')':'')+' · '+(x.a.ruolo==='F'?'foto':'stampa')
       +(x.t.gruppo_link?'\n  Gruppo WhatsApp del turno: '+x.t.gruppo_link:''); };
+  // il link al calendario solo se le squadre sono pubblicate: prima lì i turni non si vedono ancora
   return 'Ciao '+c.nome.split(' ')[0]+'! Sei in squadra:\n'+righe.map(r).join('\n')
-    +'\n\nI tuoi turni sono nel calendario: '+linkMieiTurni();
+    +(righe.every(x=>x.t.pubblicato)?'\n\nI tuoi turni sono nel calendario: '+linkMieiTurni():'');
 }
 async function formAvvisi(ids){
   if(!ids || !ids.length) return;
@@ -1415,7 +1416,7 @@ async function formAvvisi(ids){
   }
   // per persona: i suoi turni pubblicati, da oggi in poi
   const pers={};
-  for(const a of ass){ const t=tur.find(x=>x.id===a.turno_id); if(!t || t.annullato || !t.pubblicato || t.data<oggiS) continue;
+  for(const a of ass){ const t=tur.find(x=>x.id===a.turno_id); if(!t || t.annullato || t.data<oggiS) continue;
     (pers[a.collaboratore_id]=pers[a.collaboratore_id]||[]).push({a,t}); }
   const lista=Object.entries(pers).map(([cid,r])=>({ c:collabById(cid)||{id:cid,nome:'?'}, r:r.sort((x,y)=>x.t.data.localeCompare(y.t.data)||hm(x.t.ora_inizio).localeCompare(hm(y.t.ora_inizio))) }))
     .sort((x,y)=>x.c.nome.localeCompare(y.c.nome));
@@ -1656,7 +1657,8 @@ async function segnaAvvisato(i){
 }
 // avvisi dei turni pubblicati di un evento, da oggi in poi (anche dei mesi non visualizzati)
 async function avvisaEvento(id){
-  const r=await sb.from('tp_turni').select('id').eq('evento_id',id).eq('pubblicato',true).eq('annullato',false).gte('data',oggi());
+  // anche le squadre non ancora pubblicate: l'avviso privato si può mandare prima della pubblicazione
+  const r=await sb.from('tp_turni').select('id').eq('evento_id',id).eq('annullato',false).gte('data',oggi());
   if(errore(r.error)) return;
   formAvvisi(r.data.map(x=>x.id));
 }
@@ -2336,7 +2338,7 @@ function renderGC(){
       ${t.annullato?'':`${elencoPersone(t)}
       <div class="gca" style="margin-top:8px">${t.pubblicato
         ? `<button type="button" class="btn pic pri" ${ass.length?'':'disabled'} onclick="chiudiDialog(); formAvvisi(['${t.id}'])">Avvisa su WhatsApp</button><button type="button" class="btn pic" ${ass.length?'':'disabled'} onclick="chiudiDialog(); formGruppo('${t.id}')">Gruppo WhatsApp${t.gruppo_link?' ✓':''}</button><button type="button" class="btn pic" onclick="pubblicaGC('${t.id}',false)">Ritira la pubblicazione</button>`
-        : `<button type="button" class="btn pic pri" ${ass.length?'':'disabled'} onclick="pubblicaGC('${t.id}',true)">Pubblica squadra</button>`}
+        : `<button type="button" class="btn pic pri" ${ass.length?'':'disabled'} onclick="pubblicaGC('${t.id}',true)">Pubblica squadra</button><button type="button" class="btn pic" ${ass.length?'':'disabled'} onclick="chiudiDialog(); formAvvisi(['${t.id}'])">Avvisa su WhatsApp</button>`}
         <button type="button" class="btn pic" onclick="chiudiDialog(); formAssegna('${t.id}')">Tutti i collaboratori</button></div>`}
       <div class="gca" style="margin-top:6px"><button type="button" class="btn pic" onclick="chiudiDialog(); formTurno('${t.id}')">Modifica data e orari</button></div>
     </div>`;
