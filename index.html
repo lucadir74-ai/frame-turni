@@ -1882,8 +1882,56 @@ function disegnaRiepilogo(){
     ${righe.length?`<div class="griglia"><table class="riep"><thead><tr><th>Collaboratore</th><th>Turni assegnati</th><th>Presenze</th><th>Assenze</th><th>Giorni lavorati</th><th>Ore lavorate</th></tr></thead><tbody>
     ${righe.map(r=>`<tr><td>${esc(r.nome)}</td><td>${r.ass}</td><td>${r.pres}</td><td>${r.ass_||''}</td><td>${r.giorni.size}</td><td>${fmtOre(r.ore)}</td></tr>`).join('')}
     </tbody><tfoot><tr><td>Totale</td><td>${tot.ass}</td><td>${tot.pres}</td><td>${tot.ass_||''}</td><td></td><td>${fmtOre(tot.ore)}</td></tr></tfoot></table></div>
-    <p class="note">Presenze, giorni e ore contano solo i turni con le presenze confermate. I turni annullati non contano.</p>`
+    <p class="note">Presenze, giorni e ore contano solo i turni con le presenze confermate. I turni annullati non contano.</p>
+    <div class="azioni"><button type="button" class="btn pri" onclick="pdfRiepilogo()">📄 Esporta PDF</button></div>`
     :'<div class="vuoto">Nessuna assegnazione nel periodo scelto.</div>'}`;
+}
+// PDF del riepilogo: tabella dei totali + il dettaglio dei turni di ogni collaboratore.
+// Si apre una pagina pronta per la stampa: nella finestra di stampa si sceglie "Salva come PDF".
+function pdfRiepilogo(){
+  const R=S.riep; if(!R||!R.dati) return;
+  const {turni,ass}=R.dati, tById=id=>turni.find(x=>x.id===id);
+  const fmtD=d=>{ const [y,m,g]=d.split('-').map(Number); return new Date(y,m-1,g).toLocaleDateString('it-IT',{weekday:'short',day:'numeric',month:'short',year:'numeric'}); };
+  const per={};
+  ass.forEach(a=>{ const t=tById(a.turno_id); if(!t||t.annullato) return;
+    const v=per[a.collaboratore_id]=per[a.collaboratore_id]||{ass:0,pres:0,ass_:0,ore:0,giorni:new Set(),righe:[]};
+    v.ass++; v.righe.push({a,t});
+    if(t.presenze_ok){ if(a.presente===true){ v.pres++; v.ore+=oreAss(a,t); v.giorni.add(t.data); } else v.ass_++; } });
+  const pers=Object.entries(per).map(([id,v])=>({nome:(collabById(id)||{nome:'?'}).nome,...v})).sort((a,b)=>a.nome.localeCompare(b.nome));
+  if(!pers.length){ toast('Nessuna assegnazione da esportare.',true); return; }
+  const tot=pers.reduce((s,r)=>({ass:s.ass+r.ass,pres:s.pres+r.pres,ass_:s.ass_+r.ass_,ore:s.ore+r.ore}),{ass:0,pres:0,ass_:0,ore:0});
+  const sede=R.sede==='tutte'?'Tutte le sedi':(piscinaById(R.sede)||{nome:'?'}).nome;
+  const periodo='dal '+fmtD(R.da)+' al '+fmtD(R.a);
+  const stato=(a,t)=>!t.presenze_ok?'<span class="g">da confermare</span>':a.presente===true?'presente':'<span class="r">assente</span>';
+  const dett=pers.map(p=>{
+    const rr=p.righe.sort((x,y)=>x.t.data.localeCompare(y.t.data)||hm(x.t.ora_inizio).localeCompare(hm(y.t.ora_inizio)));
+    return `<section><h3>${esc(p.nome)} <small>${p.ass} turni · ${p.pres} presenze · ${fmtOre(p.ore)}</small></h3>
+      <table><thead><tr><th>Giorno</th><th>Orario</th><th>Sede</th><th>Ruolo</th><th>Presenza</th><th>Ore</th></tr></thead><tbody>
+      ${rr.map(({a,t})=>`<tr><td>${esc(fmtD(t.data))}</td><td>${hm(t.ora_inizio)}–${hm(t.ora_fine)}</td><td>${esc((piscinaById(t.piscina_id)||{nome:'?'}).nome)}</td><td>${a.ruolo==='F'?'Foto':'Stampa'}</td><td>${stato(a,t)}</td><td>${t.presenze_ok&&a.presente===true?fmtOre(oreAss(a,t)):''}</td></tr>`).join('')}
+      </tbody></table></section>`; }).join('');
+  const html=`<!doctype html><html lang="it"><head><meta charset="utf-8"><title>Riepilogo turni ${esc(R.da)} – ${esc(R.a)}</title>
+<style>
+@page{size:A4;margin:14mm}
+*{box-sizing:border-box} body{font:11pt/1.4 'Jost',system-ui,'Segoe UI',sans-serif;color:#111;margin:0}
+h1{font-size:18pt;margin:0 0 2px} .sub{color:#6B6C70;margin:0 0 14px} .bar{height:4px;background:#EB0089;margin:0 0 12px}
+h2{font-size:13pt;margin:18px 0 6px} h3{font-size:11.5pt;margin:14px 0 4px} h3 small{font-weight:500;color:#6B6C70;font-size:9.5pt}
+table{width:100%;border-collapse:collapse;font-size:9.5pt} th,td{border-bottom:1px solid #E1E1E4;padding:4px 6px;text-align:left}
+th{background:#F4F4F5;font-weight:600} tfoot td{font-weight:700;border-top:2px solid #111}
+.riep td:not(:first-child),.riep th:not(:first-child){text-align:right}
+section{break-inside:avoid} section table{table-layout:fixed} .g{color:#6B6C70} .r{color:#C8333A} .note{color:#6B6C70;font-size:9pt;margin-top:8px}
+@media screen{body{max-width:800px;margin:20px auto;padding:0 16px}}
+</style></head><body>
+<div class="bar"></div><h1>Riepilogo turni</h1><p class="sub">${esc(periodo)} · ${esc(sede)}</p>
+<table class="riep"><thead><tr><th>Collaboratore</th><th>Turni assegnati</th><th>Presenze</th><th>Assenze</th><th>Giorni lavorati</th><th>Ore lavorate</th></tr></thead><tbody>
+${pers.map(r=>`<tr><td>${esc(r.nome)}</td><td>${r.ass}</td><td>${r.pres}</td><td>${r.ass_||''}</td><td>${r.giorni.size}</td><td>${fmtOre(r.ore)}</td></tr>`).join('')}
+</tbody><tfoot><tr><td>Totale</td><td>${tot.ass}</td><td>${tot.pres}</td><td>${tot.ass_||''}</td><td></td><td>${fmtOre(tot.ore)}</td></tr></tfoot></table>
+<p class="note">Presenze, giorni e ore contano solo i turni con le presenze confermate. I turni annullati non contano.</p>
+<h2>Dettaglio dei turni</h2>${dett}
+<p class="note">Frame About You · Turni · creato il ${esc(new Date().toLocaleDateString('it-IT'))}</p>
+<script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script></body></html>`;
+  const w=window.open('','_blank');
+  if(!w){ toast('Il browser ha bloccato la finestra: consenti i popup per questo sito.',true); return; }
+  w.document.open(); w.document.write(html); w.document.close();
 }
 
 async function pubblicaMese(){
