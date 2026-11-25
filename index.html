@@ -671,10 +671,10 @@ function cardEvento(e, turni){
   if(!S.aperti) S.aperti={};
   const aperto = key in S.aperti ? S.aperti[key] : turni.length<=8;
   const validi=turni.filter(t=>!t.annullato), ann=turni.length-validi.length;
-  // giornate scoperte, da oggi in poi: stesso calcolo del Calendario posti (persone contate una volta sola, ruolo foto/stampa,
-  // insieme agli altri turni di quel giorno); una giornata è scoperta se almeno un turno di questo evento resta senza persone
+  // giornate scoperte, da oggi in poi: conta SOLO i turni di questo evento (persone contate una volta sola, ruolo foto/stampa);
+  // gli altri eventi non lo rendono scoperto, ma chi è già in squadra altrove alla stessa ora non è disponibile qui
   const o=oggi(), giorniFut=[...new Set(validi.map(t=>t.data))].filter(d=>d>=o).sort();
-  const scoperte=giorniFut.filter(d=>{ const fb=fabbisognoGiorno(S.turni.filter(t=>t.data===d)); return validi.some(t=>t.data===d && fb.corti.has(t.id)); });
+  const scoperte=giorniFut.filter(d=>{ const fb=fabbisognoGiorno(validi.filter(t=>t.data===d), S.turni.filter(t=>t.data===d && !validi.includes(t))); return fb.manca>0; });
   const breveG=d=>{ const [y,m,g]=d.split('-').map(Number); return new Date(y,m-1,g).toLocaleDateString('it-IT',{weekday:'short',day:'numeric'}); };
   const statCand = !giorniFut.length ? '' : scoperte.length
     ? `<span class="manca" title="${esc(scoperte.map(breveG).join(', '))}">${scoperte.length===1?'1 giornata scoperta':scoperte.length+' giornate scoperte'}: ${esc(scoperte.slice(0,6).map(breveG).join(', '))}${scoperte.length>6?'…':''}</span>`
@@ -2226,15 +2226,18 @@ function nomeC(id){ return (collabById(id)||{nome:'?'}).nome; }
 // conta una volta sola. Per ogni momento della giornata (inizio di ogni turno) prende i turni in corso insieme e
 // assegna i candidati ai posti (foto/stampa secondo il ruolo, una persona = un posto); il momento peggiore dà il mancante.
 // Chi è già in squadra conta nel ruolo assegnato. Restituisce {posti, persone, manca, mF, mS, corti:Set(turni scoperti)}.
-function fabbisognoGiorno(tg){
-  const tv=tg.filter(t=>!t.annullato); let peggio={posti:0,persone:0,manca:0,mF:0,mS:0}; const corti=new Set();
+// altri (facoltativo): turni dello stesso giorno fuori dal conteggio; chi è in squadra in uno di quelli nello stesso momento
+// non è disponibile per i turni contati.
+function fabbisognoGiorno(tg, altri=[]){
+  const tv=tg.filter(t=>!t.annullato), av=altri.filter(t=>!t.annullato); let peggio={posti:0,persone:0,manca:0,mF:0,mS:0}; const corti=new Set();
   const ini=[...new Set(tv.map(t=>hm(t.ora_inizio)))];
   ini.forEach(ora=>{
     const att=tv.filter(t=>hm(t.ora_inizio)<=ora && ora<hm(t.ora_fine));
     const posti=[]; att.forEach(t=>{ for(let i=0;i<(t.fotografi||0);i++) posti.push({t,r:'F'}); for(let i=0;i<(t.stampatori||0);i++) posti.push({t,r:'S'}); });
     const ids=[...new Set(att.flatMap(t=>[...S.cand,...S.ass].filter(x=>x.turno_id===t.id).map(x=>x.collaboratore_id)))];
+    const occupati=new Set(S.ass.filter(a=>av.some(t=>t.id===a.turno_id && hm(t.ora_inizio)<=ora && ora<hm(t.ora_fine))).map(a=>a.collaboratore_id));
     const puo=(cid,po)=>{ const a=S.ass.find(x=>x.turno_id===po.t.id&&x.collaboratore_id===cid); if(a) return a.ruolo===po.r;
-      if(!S.cand.some(x=>x.turno_id===po.t.id&&x.collaboratore_id===cid)) return false;
+      if(occupati.has(cid) || !S.cand.some(x=>x.turno_id===po.t.id&&x.collaboratore_id===cid)) return false;
       const ru=(collabById(cid)||{}).ruolo; return !ru || ru==='FS' || ru===po.r; };
     const occ=new Array(posti.length).fill(null);
     const prova=(cid,vis)=>{ for(let j=0;j<posti.length;j++){ if(vis[j]||!puo(cid,posti[j])) continue; vis[j]=1;
