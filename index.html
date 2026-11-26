@@ -2185,23 +2185,26 @@ function vistaDisp(){
     const tutti = S.turni.filter(t=>sedeScelta(t.piscina_id));   // anche gli annullati, barrati
     m.innerHTML = h + calendarioCand(tutti); return;
   }
-  // filtro righe: di base solo chi si è candidato o è in squadra in almeno un turno visibile; "Tutti" mostra anche gli altri attivi (per candidarli a mano)
-  const soloCand = S.soloCand!==false;
+  // filtro righe: di base solo chi si è candidato o è in squadra in almeno un turno visibile; "Solo assegnati" solo chi è in squadra;
+  // "Tutti" mostra anche gli altri attivi (per candidarli a mano)
+  const filtro = S.filtroRighe||'cand';
+  const soloCand = filtro!=='tutti', soloAss = filtro==='ass';
   const idsV=new Set(turniV.map(t=>t.id));
-  const coinvolti=new Set([...S.cand,...S.ass].filter(x=>idsV.has(x.turno_id)).map(x=>x.collaboratore_id));
+  const fonte = ()=>soloAss ? S.ass : [...S.cand,...S.ass];
+  const coinvolti=new Set(fonte().filter(x=>idsV.has(x.turno_id)).map(x=>x.collaboratore_id));
   const righe = (soloCand ? S.collab.filter(c=>coinvolti.has(c.id)) : attivi).slice().sort((a,b)=>a.nome.localeCompare(b.nome));
-  h+=`<span class="vistab-sp"></span><div class="vistab"><button aria-current="${soloCand}" onclick="filtroCand(true)">Solo candidati e assegnati</button><button aria-current="${!soloCand}" onclick="filtroCand(false)">Tutti</button></div>`
+  h+=`<span class="vistab-sp"></span><div class="vistab"><button aria-current="${filtro==='cand'}" onclick="filtroCand('cand')">Solo candidati e assegnati</button><button aria-current="${soloAss}" onclick="filtroCand('ass')">Solo assegnati</button><button aria-current="${!soloCand}" onclick="filtroCand('tutti')">Tutti</button></div>`
     +`<button class="btn pic stampa-b" onclick="schermoCand(true)">⛶ Schermo intero</button><button class="btn pic stampa-b" onclick="stampaCand()">🖨 Stampa</button>`;
   const sediTit = sediMese.filter(p=>sedeScelta(p.id)).map(p=>p.nome).join(', ');
-  const tit=`<b>Candidature · ${esc(nomeMese(S.mese))}</b> · ${esc(sediTit)}${soloCand?'':' · tutti i collaboratori'}`;
-  if(!righe.length){ m.innerHTML=h+`<div class="vuoto">${soloCand?'Nessuno si è ancora candidato ai turni scelti.':'Nessun collaboratore attivo.'}</div>`; return; }
+  const tit=`<b>Candidature · ${esc(nomeMese(S.mese))}</b> · ${esc(sediTit)}${soloAss?' · solo assegnati':soloCand?'':' · tutti i collaboratori'}`;
+  if(!righe.length){ m.innerHTML=h+`<div class="vuoto">${soloAss?'Nessuno è ancora in squadra nei turni scelti.':soloCand?'Nessuno si è ancora candidato ai turni scelti.':'Nessun collaboratore attivo.'}</div>`; return; }
   // a schermo intero (telefono in orizzontale): solo la tabella, con il tasto per uscire
   h+=`<div class="full-barra"><span>${tit}</span><button class="btn pic" onclick="schermoCand(false)">✕ Chiudi</button></div>`;
   h+='<div class="griglia schermo">'+tabellaCand(turniV,righe,nScelte)+'</div><p class="note">✓ = candidato · ★ = in squadra · in alto i candidati sui posti del turno.</p>';
   // per la stampa il mese è diviso in due fogli (1–15 e 16–fine), così la scritta è più grande
   const meta=turniV.filter(t=>+t.data.slice(8)<=15), resto=turniV.filter(t=>+t.data.slice(8)>15);
   h+=[meta,resto].filter(x=>x.length).map((parte,i,tutte)=>{
-    const rp = soloCand ? righe.filter(c=>[...S.cand,...S.ass].some(x=>x.collaboratore_id===c.id && parte.some(t=>t.id===x.turno_id))) : righe;
+    const rp = soloCand ? righe.filter(c=>fonte().some(x=>x.collaboratore_id===c.id && parte.some(t=>t.id===x.turno_id))) : righe;
     return `<div class="solo-stampa stampa-parte"><div class="stampa-tit">${tit}${tutte.length>1?` · ${i?'dal 16':'1–15'}`:''}</div>`
       +(rp.length?`<div class="griglia">${tabellaCand(parte,rp,nScelte)}</div>`:'<p class="note">Nessun candidato in questi giorni.</p>')
       +'<p class="note">✓ = candidato · ★ = in squadra · in alto candidati/posti del turno.</p></div>';
@@ -2232,7 +2235,7 @@ function tabellaCand(turniV,righe,nScelte){
   }).join('')+'</tr>';
   return h+'</tbody></table>';
 }
-function filtroCand(v){ S.soloCand=v; vistaDisp(); }
+function filtroCand(v){ S.filtroRighe=v; vistaDisp(); }
 // stampa il mese in orizzontale, in due fogli (vedi @media print): si nasconde tutto tranne le tabelle
 function stampaCand(){ document.body.classList.add('stampa-cand'); window.print(); }
 window.addEventListener('afterprint', ()=>document.body.classList.remove('stampa-cand'));
