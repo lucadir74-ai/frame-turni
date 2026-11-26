@@ -2200,28 +2200,33 @@ function vistaDisp(){
   if(!righe.length){ m.innerHTML=h+`<div class="vuoto">${soloAss?'Nessuno è ancora in squadra nei turni scelti.':soloCand?'Nessuno si è ancora candidato ai turni scelti.':'Nessun collaboratore attivo.'}</div>`; return; }
   // a schermo intero (telefono in orizzontale): solo la tabella, con il tasto per uscire
   h+=`<div class="full-barra"><span>${tit}</span><button class="btn pic" onclick="schermoCand(false)">✕ Chiudi</button></div>`;
-  h+='<div class="griglia schermo">'+tabellaCand(turniV,righe,nScelte)+'</div><p class="note">✓ = candidato · ★ = in squadra · in alto i candidati sui posti del turno.</p>';
+  const legenda = soloAss ? '★ = in squadra · in alto quanti sono in squadra sui posti del turno.' : '✓ = candidato · ★ = in squadra · in alto i candidati sui posti del turno.';
+  h+='<div class="griglia schermo">'+tabellaCand(turniV,righe,nScelte,soloAss)+`</div><p class="note">${legenda}</p>`;
   // per la stampa il mese è diviso in due fogli (1–15 e 16–fine), così la scritta è più grande
   const meta=turniV.filter(t=>+t.data.slice(8)<=15), resto=turniV.filter(t=>+t.data.slice(8)>15);
   h+=[meta,resto].filter(x=>x.length).map((parte,i,tutte)=>{
     const rp = soloCand ? righe.filter(c=>fonte().some(x=>x.collaboratore_id===c.id && parte.some(t=>t.id===x.turno_id))) : righe;
     return `<div class="solo-stampa stampa-parte"><div class="stampa-tit">${tit}${tutte.length>1?` · ${i?'dal 16':'1–15'}`:''}</div>`
-      +(rp.length?`<div class="griglia">${tabellaCand(parte,rp,nScelte)}</div>`:'<p class="note">Nessun candidato in questi giorni.</p>')
-      +'<p class="note">✓ = candidato · ★ = in squadra · in alto candidati/posti del turno.</p></div>';
+      +(rp.length?`<div class="griglia">${tabellaCand(parte,rp,nScelte,soloAss)}</div>`:`<p class="note">${soloAss?'Nessuno in squadra':'Nessun candidato'} in questi giorni.</p>`)
+      +`<p class="note">${soloAss?'★ = in squadra · in alto in squadra/posti del turno.':'✓ = candidato · ★ = in squadra · in alto candidati/posti del turno.'}</p></div>`;
   }).join('');
   m.innerHTML=h;
   document.body.classList.toggle('tab-full', !!S.tabFull);
 }
-function tabellaCand(turniV,righe,nScelte){
+// soloAss: si vedono solo le stelle (in squadra); le candidature restano nascoste e le caselle vuote non si toccano,
+// così non si aggiunge per sbaglio una candidatura che poi non si vedrebbe. I conteggi diventano "in squadra".
+function tabellaCand(turniV,righe,nScelte,soloAss){
+  const conta = t => (soloAss?S.ass:S.cand).filter(k=>k.turno_id===t.id).length;
   let h='<table><thead><tr><th class="nome">Collaboratore</th>'+turniV.map(t=>{
     const [y,mm,g]=t.data.split('-').map(Number); const wd=new Date(y,mm-1,g).toLocaleDateString('it-IT',{weekday:'short'});
-    const nc=S.cand.filter(k=>k.turno_id===t.id).length, posti=(t.fotografi||0)+(t.stampatori||0);
+    const nc=conta(t), posti=(t.fotografi||0)+(t.stampatori||0);
     return `<th class="ev">${wd} ${g}<div class="pisc">${nScelte>1?esc((piscinaById(t.piscina_id)||{nome:'?'}).nome)+'<br>':''}<span class="ore">${hm(t.ora_inizio)}–${hm(t.ora_fine)}</span><br><span class="${nc>=posti?'pieno':'manca'}">${nc}/${posti}</span></div></th>`;
   }).join('')+'</tr></thead><tbody>';
   righe.forEach(c=>{
     h+=`<tr><td class="nome">${esc(c.nome)}</td>`+turniV.map(t=>{
-      const k=S.cand.some(x=>x.turno_id===t.id&&x.collaboratore_id===c.id);
+      const k=!soloAss && S.cand.some(x=>x.turno_id===t.id&&x.collaboratore_id===c.id);
       const sq=S.ass.some(x=>x.turno_id===t.id&&x.collaboratore_id===c.id);
+      if(soloAss && !sq) return '<td><div class="fx"><button disabled style="cursor:default"></button></div></td>';
       // piscine: candidato qui ma già in squadra in un'altra sede alla stessa ora → grigio, e passando sopra si vede dove
       const altrove = !sq && k && sedeNascosta(t.piscina_id) ? giaInSquadraAltrove(c.id,t) : null;
       const tit = sq ? 'In squadra' : altrove ? testoAltrove(altrove) : k ? 'Candidato: tocca per togliere' : 'Tocca per candidare';
@@ -2229,8 +2234,8 @@ function tabellaCand(turniV,righe,nScelte){
     }).join('')+'</tr>';
   });
   // ultima riga: totale candidati per turno (ripetuto in fondo, comodo sulla stampa)
-  h+='<tr class="tot"><td class="nome">Candidati</td>'+turniV.map(t=>{
-    const nc=S.cand.filter(k=>k.turno_id===t.id).length, posti=(t.fotografi||0)+(t.stampatori||0);
+  h+=`<tr class="tot"><td class="nome">${soloAss?'In squadra':'Candidati'}</td>`+turniV.map(t=>{
+    const nc=conta(t), posti=(t.fotografi||0)+(t.stampatori||0);
     return `<td class="${nc>=posti?'pieno':'manca'}">${nc}</td>`;
   }).join('')+'</tr>';
   return h+'</tbody></table>';
