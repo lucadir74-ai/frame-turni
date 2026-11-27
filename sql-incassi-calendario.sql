@@ -5,6 +5,7 @@
 -- Come funziona:
 --  · nel calendario, scheda "I miei turni", sul turno compare "Inserisci incassi" dal giorno del turno fino a 3 giorni dopo
 --    (come il vecchio link);
+--  · solo per le piscine (sedi con il nome nascosto ai ragazzi): sui turni del Christmas (nome visibile) non compare;
 --  · lo vede solo chi è in squadra come stampatore in quel turno (se nella squadra non c'è nessuno stampatore, tutta la squadra);
 --  · ogni turno ha il suo report: si leggono e si salvano solo i dati di quel turno, mai quelli degli altri;
 --  · quando il ragazzo tocca "Invia report" il turno risulta inviato (con ora e nome di chi l'ha mandato)
@@ -27,6 +28,7 @@ as $function$
       from tp_turni t
       join tp_assegnazioni a on a.turno_id = t.id and a.collaboratore_id = p_collab
       join tp_collaboratori c on c.id = p_collab and c.attivo
+      join tp_piscine p on p.id = t.piscina_id and not coalesce(p.nome_visibile, false)
      where t.id = p_turno
        and t.pubblicato and not coalesce(t.annullato, false)
        and t.data <= (now() at time zone 'Europe/Rome')::date

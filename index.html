@@ -2005,7 +2005,7 @@ function vistaIncassiRep(){
   m.innerHTML=`<div class="barra" style="flex-wrap:wrap;gap:10px">
     <label class="campo" style="margin:0"><span>Dal</span><input type="date" id="iDa" value="${R.da}"></label>
     <label class="campo" style="margin:0"><span>Al</span><input type="date" id="iA" value="${R.a}"></label>
-    <label class="campo" style="margin:0"><span>Sede</span><select id="iSede"><option value="tutte">Tutte le sedi</option>${S.piscine.map(p=>`<option value="${p.id}" ${R.sede===p.id?'selected':''}>${esc(p.nome)}</option>`).join('')}</select></label>
+    <label class="campo" style="margin:0"><span>Sede</span><select id="iSede"><option value="tutte">Tutte le piscine</option>${S.piscine.filter(p=>!sedeVisibile(p)).map(p=>`<option value="${p.id}" ${R.sede===p.id?'selected':''}>${esc(p.nome)}</option>`).join('')}</select></label>
     <button class="btn pri" style="align-self:end" onclick="caricaIncassiRep()">Mostra</button></div><div id="iOut"></div>`;
   caricaIncassiRep();   // rilegge sempre: i report dei ragazzi arrivano in qualsiasi momento
 }
@@ -2015,7 +2015,8 @@ async function caricaIncassiRep(){
   let q=sb.from('tp_turni').select('*').gte('data',R.da).lte('data',R.a).order('data').order('ora_inizio');
   if(R.sede!=='tutte') q=q.eq('piscina_id',R.sede);
   const t=await q; if(errore(t.error)) return;
-  const turni=t.data.filter(x=>!x.annullato), ids=turni.map(x=>x.id);
+  // solo piscine: i turni del Christmas (sedi con il nome visibile ai ragazzi) non hanno incassi
+  const turni=t.data.filter(x=>!x.annullato && !sedeVisibile(piscinaById(x.piscina_id))), ids=turni.map(x=>x.id);
   let ass=[], inc=[], spe=[], comp=[];
   if(ids.length){
     const [a,i,sp]=await Promise.all([
@@ -2058,7 +2059,7 @@ function quandoInc(d){ return d ? new Date(d).toLocaleString('it-IT',{day:'numer
 function disegnaIncassiRep(){
   const out=document.getElementById('iOut'); if(!out) return;
   const rr=righeIncassi();
-  if(!rr.length){ out.innerHTML='<div class="vuoto">Nessun turno con squadra o incassi nel periodo scelto.</div>'; return; }
+  if(!rr.length){ out.innerHTML='<div class="vuoto">Nessun turno in piscina con squadra o incassi nel periodo scelto.</div>'; return; }
   const tot=sommaInc(rr), inviati=rr.filter(r=>r.inviato), mancano=rr.filter(r=>!r.inviato && r.t.data<=oggi());
   let h=`<div class="ir-tot">
     <div><span>Report inviati</span><b>${inviati.length} / ${rr.length}</b></div>
@@ -2095,7 +2096,7 @@ function disegnaIncassiRep(){
   <h3 class="ir-h">Per collaboratore</h3><div class="griglia"><table class="riep"><thead><tr><th>Collaboratore</th><th>Turni</th><th>Compensi</th><th>Note</th></tr></thead><tbody>
     ${pc.map(v=>`<tr><td>${esc(v.nome)}</td><td>${v.turni}</td><td>${eur(v.imp)}</td><td style="text-align:left;white-space:normal">${esc(v.note.join(' · '))}</td></tr>`).join('')}
     </tbody><tfoot><tr><td>Totale</td><td></td><td>${eur(pc.reduce((s,v)=>s+v.imp,0))}</td><td></td></tr></tfoot></table></div>
-  <p class="note">Contanti che restano = contanti − % sede − spese − compensi. Il POS arriva sul conto e non entra in quel conto; il margine con POS lo comprende. I turni annullati non contano. Lo vedono solo gli organizzatori.</p>`;
+  <p class="note">Contanti che restano = contanti − % sede − spese − compensi. Il POS arriva sul conto e non entra in quel conto; il margine con POS lo comprende. I turni annullati e quelli del Christmas non contano. Lo vedono solo gli organizzatori.</p>`;
   out.innerHTML=h;
 }
 function pdfIncassiRep(){
@@ -2103,7 +2104,7 @@ function pdfIncassiRep(){
   const rr=righeIncassi(); if(!rr.length){ toast('Niente da esportare.',true); return; }
   const tot=sommaInc(rr), ps=perSedeInc(rr), pc=perCollabInc(rr);
   const fmtD=d=>{ const [y,m,g]=d.split('-').map(Number); return new Date(y,m-1,g).toLocaleDateString('it-IT',{weekday:'short',day:'numeric',month:'short',year:'numeric'}); };
-  const sede=R.sede==='tutte'?'Tutte le sedi':(piscinaById(R.sede)||{nome:'?'}).nome;
+  const sede=R.sede==='tutte'?'Tutte le piscine':(piscinaById(R.sede)||{nome:'?'}).nome;
   const giorni=[...new Set(rr.map(r=>r.t.data))].map(d=>{
     const g=rr.filter(r=>r.t.data===d).sort((a,b)=>a.p.nome.localeCompare(b.p.nome)||hm(a.t.ora_inizio).localeCompare(hm(b.t.ora_inizio))), gt=sommaInc(g);
     return `<section><h3>${esc(fmtD(d))}</h3><table><thead><tr><th>Sede</th><th>Orario</th><th>Squadra e compensi</th><th>Contanti</th><th>POS</th><th>% sede</th><th>Spese</th><th>Restano</th></tr></thead><tbody>
