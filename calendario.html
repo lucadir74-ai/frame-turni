@@ -83,6 +83,28 @@ main{max-width:640px;margin:0 auto;padding:16px}
 .daconf span{font-size:.9rem}
 .daconf button{background:var(--water);color:#fff;border:0;border-radius:8px;padding:8px 16px;font-weight:600}
 .note48{font-size:.88rem;color:var(--muted);margin:6px 0 8px}
+/* incassi del turno */
+.incbox{margin-top:10px;border-top:1px dashed var(--line);padding-top:10px}
+.incbox .ok{color:var(--ok);font-weight:600;font-size:.9rem;margin:0 0 6px}
+.inc .box{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
+.inc .box h2{font:700 1.05rem var(--fc);margin:0 0 10px}
+.inc .testa{background:var(--card);border:1px solid var(--water);border-radius:12px;padding:12px 14px;margin-bottom:12px}
+.inc .testa b{font:700 1.1rem var(--fc)}
+.inc .testa div{color:var(--muted);text-transform:capitalize;font-size:.92rem}
+.inc .riga{display:grid;grid-template-columns:1fr 9em;align-items:center;gap:10px;margin-bottom:10px}
+.inc .riga span{font-weight:600}
+.inc input{border:1px solid var(--line);border-radius:8px;padding:10px;background:#fff;width:100%;font:inherit;min-width:0}
+.inc input.euro{text-align:right;font-variant-numeric:tabular-nums}
+.inc .spesa{display:grid;grid-template-columns:1fr 7em auto;gap:8px;margin-bottom:8px}
+.inc .comp{border-top:1px solid var(--line);padding:10px 0 2px}
+.inc .comp:first-of-type{border-top:0;padding-top:0}
+.inc .comp .r1{display:grid;grid-template-columns:1fr 7em;gap:8px;align-items:center;margin-bottom:6px}
+.inc .bx{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:9px 12px;font-weight:600}
+.inc .bx.x{color:var(--red)}
+.inc .tot{display:flex;justify-content:space-between;font-weight:700;font-size:1.05rem;font-variant-numeric:tabular-nums}
+.inc .riep div{display:flex;justify-content:space-between;font-variant-numeric:tabular-nums;padding:2px 0}
+.inc .riep .netto{border-top:2px solid var(--ink);margin-top:6px;padding-top:6px;font-weight:700;font-size:1.1rem}
+.inc .nota{color:var(--muted);font-size:.88rem;margin:8px 0 0}
 .btnwa{display:block;text-align:center;background:#1F8F4E;color:#fff;border-radius:10px;padding:11px;font-weight:600;text-decoration:none}
 .velo{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:20px;z-index:20}
 .velo .box{background:#fff;border-radius:14px;padding:20px;max-width:420px;width:100%}
@@ -185,6 +207,9 @@ async function carica(id){
   let [r, sq] = await Promise.all([sb.rpc('tp_pub_calendario', { p_collab:id }), sb.rpc('tp_pub_squadre', { p_collab:id })]);
   // squadre degli eventi con "Squadre per tutti" acceso (sql-squadre-visibili.sql); senza lo script resta vuoto
   S.squadre = sq.error ? [] : (sq.data||[]).filter(e=>(e.turni||[]).length);
+  // turni di cui posso inviare gli incassi adesso (sql-incassi-calendario.sql); senza lo script resta vuoto
+  const im = await sb.rpc('tp_pub_inc_miei', { p_collab:id });
+  S.incMiei = {}; if(!im.error) (im.data||[]).forEach(x=>S.incMiei[x.turno_id]=x);
   if(r.error) r = await sb.rpc('tp_pub_calendario');
   if(r.error || !r.data) return null;
   S.tutti = raggruppa((r.data.turni||[]).map(t=>normalizza(t,id)));
@@ -281,9 +306,9 @@ async function ricarica(){
 function disegna(){
   document.getElementById('app').innerHTML = `<header>
     <div class="top"><img class="logo" src="logo-bianco.png" alt="Frame About You"><h1>Ciao ${esc(S.io.nome)}</h1><button onclick="cambiaNome()">Non sei tu?</button></div>
-    <div class="seg"><button aria-current="${S.vista==='cal'}" onclick="vai('cal')">Calendario</button><button aria-current="${S.vista==='miei'}" onclick="vai('miei')">I miei turni</button>${(S.squadre||[]).length||S.vista==='squadre'?`<button aria-current="${S.vista==='squadre'}" onclick="vai('squadre')">Squadre</button>`:''}<button aria-current="${S.vista==='profilo'}" onclick="vai('profilo')">Profilo</button></div>
+    <div class="seg"><button aria-current="${S.vista==='cal'}" onclick="vai('cal')">Calendario</button><button aria-current="${S.vista==='miei'||S.vista==='incassi'}" onclick="vai('miei')">I miei turni</button>${(S.squadre||[]).length||S.vista==='squadre'?`<button aria-current="${S.vista==='squadre'}" onclick="vai('squadre')">Squadre</button>`:''}<button aria-current="${S.vista==='profilo'}" onclick="vai('profilo')">Profilo</button></div>
     <div class="corsia"></div></header><main id="main"></main>`;
-  S.vista==='miei' ? vistaTurni() : S.vista==='profilo' ? vistaProfilo() : S.vista==='squadre' ? vistaSquadre() : vistaCal();
+  S.vista==='incassi' ? vistaIncassi() : S.vista==='miei' ? vistaTurni() : S.vista==='profilo' ? vistaProfilo() : S.vista==='squadre' ? vistaSquadre() : vistaCal();
 }
 
 // ---------- PROFILO: ognuno cambia i propri dati (telefono, email, macchina, cosa fa) ----------
@@ -328,7 +353,12 @@ function linkWa(testo){ return 'https://wa.me/'+WA_ORG+'?text='+encodeURICompone
 function posti(t){ const p=[]; if(t.fotografi) p.push(t.fotografi+' foto'); if(t.stampatori) p.push(t.stampatori+' stampa'); return p.join(' + ')||'—'; }
 
 // niente più conferma da dare: i turni si segnano come visualizzati da soli (segnaVisti)
-function avvisoConferma(){ return ''; }
+// ...al suo posto, in alto, l'avviso dei report incassi ancora da inviare
+function avvisoConferma(){
+  const da=S.tutti.filter(t=>S.incMiei?.[t.id] && !S.incMiei[t.id].inviato_il);
+  if(!da.length) return '';
+  return `<div class="daconf"><span>${da.length===1?'Devi ancora inviare gli incassi di <b>'+esc(da[0].piscina)+'</b>, '+nomeGiorno(da[0].data)+'.':'Devi ancora inviare gli incassi di <b>'+da.length+' turni</b>.'}</span><button onclick="${da.length===1?`apriIncassi('${da[0].id}')`:"vai('miei')"}">${da.length===1?'Inserisci incassi':'Vedi'}</button></div>`;
+}
 
 function vistaTurni(){
   const m=document.getElementById('main');
@@ -336,7 +366,7 @@ function vistaTurni(){
   const sedi=[...new Set(base.map(t=>t.piscina))].sort();
   if(S.sede && !sedi.includes(S.sede)) S.sede=null;
   let lista = base.filter(t=> !S.sede || t.piscina===S.sede);
-  if(S.vista==='miei'){ const o=oggiStr(); lista=lista.filter(t=>mio(t) && t.data>=o); }
+  if(S.vista==='miei'){ const o=oggiStr(); lista=lista.filter(t=>mio(t) && (t.data>=o || S.incMiei?.[t.id])); }
   lista=[...lista].sort((x,y)=>x.data.localeCompare(y.data)||hm(x.ora_inizio).localeCompare(hm(y.ora_inizio)));
   let h = (S.vista==='miei' ? '' : tastiAmbito()) + avvisoConferma() + (S.vista==='miei'
     ? '<p class="intro">I turni da oggi in poi a cui ti sei candidato e quelli in cui sei in squadra.</p>'
@@ -373,7 +403,114 @@ function scheda(t){
     ${!t.visibile && !sq && !t.annullato?'<div class="squadra">Serve disponibilità per questa fascia: dove e con chi lo sai quando la squadra è pubblicata.</div>':''}
     ${t.pubblicato && t.squadra.length?`<div class="squadra"><b>${t.colleghi===false?'Il tuo ruolo':sq?'Squadra':'In turno'}:</b> ${t.squadra.map(x=>`<span class="${sonoIo(x)?'io':''}"><span class="tag ${x.ruolo}">${x.ruolo==='F'?'FOTO':'STAMPA'}</span>${esc(x.nome)}${sonoIo(x)?' (tu)':''}</span>`).join(' ')}</div>`:''}
     ${azione?`<div class="az">${azione}</div>`:''}
+    ${bloccoIncassi(t)}
   </div>`;
+}
+function bloccoIncassi(t){
+  const x=S.incMiei?.[t.id]; if(!x || !inSquadra(t)) return '';
+  const quando=d=>new Date(d).toLocaleString('it-IT',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+  return `<div class="incbox">${x.inviato_il?`<p class="ok">✓ Incassi inviati (${quando(x.inviato_il)})</p>`:''}
+    <button class="${x.inviato_il?'btnsec':'btnpri'}" style="margin-top:0" onclick="apriIncassi('${t.id}')">${x.inviato_il?'Correggi incassi':'💶 Inserisci incassi'}</button></div>`;
+}
+
+// ================= INCASSI DEL TURNO =================
+// Ogni turno ha il suo report: si apre dal turno in "I miei turni" e legge/salva solo i dati di quel turno.
+// Lo vede chi è in squadra come stampatore, dal giorno del turno fino a 3 giorni dopo (sql-incassi-calendario.sql).
+function eur(n){ return (n||0).toLocaleString('it-IT',{style:'currency',currency:'EUR'}); }
+function mostraN(n){ return n==null ? '' : String(n).replace('.',','); }
+function numE(v){ v=String(v||'').trim().replace(/\s|€/g,''); if(!v) return null; if(v.includes(',')) v=v.replace(/\./g,'').replace(',','.'); const n=Number(v); return isNaN(n)?NaN:Math.round(n*100)/100; }
+function v0(x){ const n=numE(x); return (n==null||isNaN(n)) ? 0 : n; }
+function apriIncassi(id){
+  document.querySelectorAll('.velo.dett').forEach(x=>x.remove()); S.giorno=null;
+  S.incTurno=id; S.incDati=null; S.vista='incassi'; disegna(); window.scrollTo(0,0);
+}
+function chiudiIncassi(){ S.incTurno=null; S.incDati=null; vai('miei'); }
+async function vistaIncassi(){
+  const m=document.getElementById('main'); if(!m) return;
+  if(!S.incDati){
+    m.innerHTML='<div class="vuoto">Carico gli incassi del turno…</div>';
+    const { data, error } = await sb.rpc('tp_pub_inc_leggi', { p_collab:S.io.id, p_turno:S.incTurno });
+    if(S.vista!=='incassi') return;
+    if(error || !data){ m.innerHTML='<div class="vuoto">'+esc(error && /modificabili/.test(error.message||'') ? error.message : 'Non riesco a caricare gli incassi. Riprova tra poco.')+'</div><button class="btnsec" onclick="chiudiIncassi()">‹ Torna ai miei turni</button>'; return; }
+    S.incDati=data;
+  }
+  const D=S.incDati, i=D.incasso||{};
+  const [y,mm,g]=String(D.scade).split('-').map(Number);
+  const scade=new Date(y,mm-1,g).toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long'});
+  m.innerHTML=`<div class="inc">
+    <button class="btnlink" style="margin:0 0 10px;padding:0" onclick="chiudiIncassi()">‹ Torna ai miei turni</button>
+    <div class="testa"><b>${esc(D.piscina)}</b><div>${nomeGiorno(D.data)}, ${hm(D.ora_inizio)}–${hm(D.ora_fine)}</div></div>
+    <div class="box"><h2>Incasso</h2>
+      <label class="riga"><span>Contanti</span><input class="euro" id="cash" inputmode="decimal" placeholder="0,00" value="${mostraN(i.cash)}" oninput="totIncassi()"></label>
+      <label class="riga"><span>POS</span><input class="euro" id="pos" inputmode="decimal" placeholder="0,00" value="${mostraN(i.pos)}" oninput="totIncassi()"></label>
+      <div class="tot"><span>Totale incasso</span><span id="tot"></span></div>
+    </div>
+    <div class="box"><h2>Uscite</h2>
+      <label class="riga"><span>% piscina</span><input class="euro" id="perc" inputmode="decimal" placeholder="0,00" value="${mostraN(i.percentuale_piscina)}" oninput="totIncassi()"></label>
+      <div id="spese" oninput="totIncassi()"></div>
+      <button class="bx" onclick="aggiungiSpesa()">+ Aggiungi spesa (bar o altro)</button>
+    </div>
+    <div class="box"><h2>Compensi</h2>
+      ${(D.squadra||[]).map(x=>`<div class="comp" data-id="${esc(x.assegnazione_id)}">
+        <div class="r1"><span><span class="tag ${x.ruolo}">${x.ruolo==='F'?'FOTO':'STAMPA'}</span><b>${esc(x.nome)}</b></span>
+        <input class="euro ci" inputmode="decimal" placeholder="0,00" value="${mostraN(x.importo)}" oninput="totIncassi()" aria-label="Compenso ${esc(x.nome)}"></div>
+        <input class="cn" placeholder="Nota (es. macchina, trasferta, riporta attrezzatura)" value="${esc(x.nota||'')}">
+      </div>`).join('') || '<p class="nota" style="margin:0">Nessuna persona in squadra.</p>'}
+    </div>
+    <div class="box riep"><h2>Riepilogo</h2>
+      <div><span>Contanti</span><span id="r-inc"></span></div>
+      <div><span>% piscina</span><span id="r-perc"></span></div>
+      <div><span>Spese</span><span id="r-spese"></span></div>
+      <div><span>Compensi</span><span id="r-comp"></span></div>
+      <div class="netto"><span>Contanti che restano</span><span id="r-netto"></span></div>
+      <p class="nota">Il POS non entra in questo conto: arriva direttamente sul conto. POS di oggi: <b id="r-pos"></b></p>
+    </div>
+    <button class="btnpri" id="salvaInc" onclick="inviaIncassi()">${i.inviato_il?'Invia di nuovo (corretto)':'Invia report'}</button>
+    <p class="nota">${i.inviato_il?'Ultimo invio: '+new Date(i.inviato_il).toLocaleString('it-IT',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})+'. ':''}Il report arriva solo agli organizzatori. Puoi correggerlo e rimandarlo fino a ${scade} compreso. Scrivi solo i numeri, per esempio 120 o 12,50.</p>
+  </div>`;
+  (D.spese||[]).forEach(x=>aggiungiSpesa(x.descrizione, mostraN(x.importo)));
+  totIncassi();
+}
+function aggiungiSpesa(desc,imp){
+  const r=document.createElement('div'); r.className='spesa';
+  r.innerHTML=`<input class="sd" placeholder="Descrizione (es. bar)" value="${esc(desc||'')}"><input class="si euro" inputmode="decimal" placeholder="0,00" value="${esc(imp||'')}"><button class="bx x" aria-label="Togli spesa" onclick="this.parentNode.remove();totIncassi()">×</button>`;
+  document.getElementById('spese').appendChild(r);
+  if(desc===undefined) r.querySelector('.sd').focus();
+}
+function totIncassi(){
+  const val=id=>document.getElementById(id).value;
+  const c=numE(val('cash'))||0, p=numE(val('pos'))||0;
+  const inc=v0(val('cash')), perc=v0(val('perc'));
+  const spese=[...document.querySelectorAll('#spese .si')].reduce((a,e)=>a+v0(e.value),0);
+  const comp=[...document.querySelectorAll('.comp .ci')].reduce((a,e)=>a+v0(e.value),0);
+  const set=(id,v)=>{ const e=document.getElementById(id); if(e) e.textContent=v; };
+  set('tot', (isNaN(c)||isNaN(p)) ? '—' : eur(c+p));
+  set('r-inc',eur(inc)); set('r-perc','− '+eur(perc)); set('r-spese','− '+eur(spese)); set('r-comp','− '+eur(comp)); set('r-netto',eur(inc-perc-spese-comp)); set('r-pos',eur(v0(val('pos'))));
+}
+async function inviaIncassi(){
+  const val=id=>document.getElementById(id).value;
+  const cash=numE(val('cash')), pos=numE(val('pos')), perc=numE(val('perc'));
+  if([cash,pos,perc].some(v=>Number.isNaN(v) || (v!=null && v<0))) return toast('Controlla gli importi: scrivi solo numeri.',true);
+  if(cash==null && pos==null) return toast('Scrivi almeno i contanti o il POS (anche 0).',true);
+  const spese=[];
+  for(const r of document.querySelectorAll('#spese .spesa')){
+    const d=r.querySelector('.sd').value.trim(), v=numE(r.querySelector('.si').value);
+    if(!d && v==null) continue;
+    if(!d) return toast('Scrivi la descrizione della spesa.',true);
+    if(v==null || Number.isNaN(v) || v<0) return toast('Controlla l\'importo della spesa "'+d+'".',true);
+    spese.push({ descrizione:d, importo:v });
+  }
+  const compensi=[];
+  for(const r of document.querySelectorAll('.comp')){
+    const v=numE(r.querySelector('.ci').value), n=r.querySelector('.cn').value.trim();
+    if(Number.isNaN(v) || (v!=null && v<0)) return toast('Controlla il compenso di '+r.querySelector('b').textContent+'.',true);
+    compensi.push({ assegnazione_id:r.dataset.id, importo:v, nota:n });
+  }
+  const b=document.getElementById('salvaInc'); b.disabled=true; b.textContent='Invio…';
+  const { error } = await sb.rpc('tp_pub_inc_salva', { p_collab:S.io.id, p_turno:S.incTurno, p_cash:cash, p_pos:pos, p_perc:perc, p_spese:spese, p_compensi:compensi });
+  if(error){ b.disabled=false; b.textContent='Invia report'; return toast(error.message||'Non inviato, riprova.',true); }
+  toast('Report inviato agli organizzatori ✓');
+  await ricarica(); chiudiIncassi();
 }
 
 // ================= SQUADRE: tutti i turni degli eventi con "Squadre per tutti", con chi c'è =================
@@ -411,7 +548,7 @@ function vistaSquadre(){
 const PALETTE=['#EB0089','#1E6FD9','#E07B00','#2E9D5B','#7B3FC4','#00A3A3','#C8333A','#6B6C70'];
 function coloreT(t){ if(!t.visibile) return '#818286'; if(t.colore) return t.colore; let h=0; for(const ch of String(t.piscina_id||t.piscina)) h=(h*31+ch.charCodeAt(0))>>>0; return PALETTE[h%PALETTE.length]; }
 function oggiStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
-function aggiorna(){ if(S.vista==='profilo') return; if(S.vista==='squadre') return vistaSquadre(); if(S.vista==='miei') vistaTurni(); else { vistaCal(); if(S.giorno) apriGiorno(S.giorno,true); } }
+function aggiorna(){ if(S.vista==='profilo' || S.vista==='incassi') return; if(S.vista==='squadre') return vistaSquadre(); if(S.vista==='miei') vistaTurni(); else { vistaCal(); if(S.giorno) apriGiorno(S.giorno,true); } }
 function sovrapposti(t){ if(!t) return []; return S.tutti.filter(x=>x.id!==t.id && x.data===t.data && !x.annullato && x.candidati.some(sonoIo)
   && hm(x.ora_inizio)<hm(t.ora_fine) && hm(t.ora_inizio)<hm(x.ora_fine)); }
 function mesiConTurni(){ return [...new Set(S.turni.map(t=>t.data.slice(0,7)))].sort(); }
