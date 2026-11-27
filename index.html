@@ -187,6 +187,18 @@ body.tab-full .griglia.schermo thead th.nome{z-index:3}
 .riep th:first-child,.riep td:first-child{text-align:left}
 .riep th{color:var(--muted);font-weight:600}
 .riep tfoot td{font-weight:700}
+/* report incassi */
+.ir-tot{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin:0 0 14px}
+.ir-tot div{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 12px}
+.ir-tot span{display:block;font-size:.8rem;color:var(--muted)}
+.ir-tot b{font:700 1.1rem var(--fc);font-variant-numeric:tabular-nums}
+.ir-tot .forte{border-color:var(--water)}
+.ir-num{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:2px 12px;margin:8px 0 4px;font-size:.9rem;font-variant-numeric:tabular-nums}
+.ir-num span{color:var(--muted)}
+.ir-comp{font-size:.88rem;margin-top:6px}
+.ir-gtot{font-size:.88rem;font-weight:500;color:var(--muted);font-variant-numeric:tabular-nums;text-transform:none}
+.st-ok{background:#E7F3EC;color:var(--ok)} .st-no{background:#FBE9EA;color:var(--red)}
+.ir-h{font:700 1.1rem var(--fc);margin:24px 0 8px}
 .imp{display:inline-flex;gap:2px;vertical-align:middle}
 .imp i{width:7px;height:7px;border-radius:50%;background:var(--line)}
 .imp i.on{background:var(--water)}
@@ -596,7 +608,7 @@ async function ricarica(){ await caricaMese(); disegna(); }
 
 // ---------- struttura ----------
 function disegna(){
-  const tabs=[['turni','Eventi'],['disponibilita','Candidature'],['collaboratori','Collaboratori'],['piscine','Sedi'],['riepilogo','Riepilogo']];
+  const tabs=[['turni','Eventi'],['disponibilita','Candidature'],['collaboratori','Collaboratori'],['piscine','Sedi'],['incassi','Incassi'],['riepilogo','Riepilogo']];
   document.getElementById('app').innerHTML = `
   <header>
     <div class="top"><img class="logo" src="logo-bianco.png" alt="Frame About You"><h1>Turni</h1><span class="chi">${esc(S.me.nome)}</span><button onclick="esci()">Esci</button></div>
@@ -604,7 +616,7 @@ function disegna(){
     <div class="corsia"></div>
   </header>
   <main id="main"></main>`;
-  ({turni:vistaTurni, disponibilita:vistaDisp, collaboratori:vistaCollab, piscine:vistaPiscine, riepilogo:vistaRiepilogo})[S.tab]();
+  ({turni:vistaTurni, disponibilita:vistaDisp, collaboratori:vistaCollab, piscine:vistaPiscine, incassi:vistaIncassiRep, riepilogo:vistaRiepilogo})[S.tab]();
   // se il dettaglio di un turno è aperto, lo aggiorna con i dati nuovi (o lo chiude se il turno non esiste più)
   const d=document.getElementById('dlg');
   if(d.open && d.dataset.tipo==='turno'){ const t=S.turni.find(x=>x.id===S.turnoAperto); if(t) d.querySelector('.dlg-b').innerHTML=cardTurno(t); else chiudiDialog(); }
@@ -1983,6 +1995,153 @@ async function togliDaDialog(aid,tid){
   await caricaMese(); vistaTurni(); formAssegna(tid);
 }
 
+// ---------- REPORT INCASSI (solo organizzatori) ----------
+// Si compila da solo con i report che i ragazzi inviano dal calendario (o dal vecchio link incassi).
+// Diviso per giorno → sede → turno, con i compensi di ogni collaboratore; in fondo i totali per sede e per collaboratore.
+function vistaIncassiRep(){
+  const m=document.getElementById('main');
+  if(!S.irep){ const [da,a]=limitiMese(S.mese); S.irep={da,a,sede:'tutte',dati:null}; }
+  const R=S.irep;
+  m.innerHTML=`<div class="barra" style="flex-wrap:wrap;gap:10px">
+    <label class="campo" style="margin:0"><span>Dal</span><input type="date" id="iDa" value="${R.da}"></label>
+    <label class="campo" style="margin:0"><span>Al</span><input type="date" id="iA" value="${R.a}"></label>
+    <label class="campo" style="margin:0"><span>Sede</span><select id="iSede"><option value="tutte">Tutte le sedi</option>${S.piscine.map(p=>`<option value="${p.id}" ${R.sede===p.id?'selected':''}>${esc(p.nome)}</option>`).join('')}</select></label>
+    <button class="btn pri" style="align-self:end" onclick="caricaIncassiRep()">Mostra</button></div><div id="iOut"></div>`;
+  caricaIncassiRep();   // rilegge sempre: i report dei ragazzi arrivano in qualsiasi momento
+}
+async function caricaIncassiRep(){
+  const R=S.irep; R.da=document.getElementById('iDa').value; R.a=document.getElementById('iA').value; R.sede=document.getElementById('iSede').value;
+  if(!R.da||!R.a||R.a<R.da){ toast('Controlla le date.',true); return; }
+  let q=sb.from('tp_turni').select('*').gte('data',R.da).lte('data',R.a).order('data').order('ora_inizio');
+  if(R.sede!=='tutte') q=q.eq('piscina_id',R.sede);
+  const t=await q; if(errore(t.error)) return;
+  const turni=t.data.filter(x=>!x.annullato), ids=turni.map(x=>x.id);
+  let ass=[], inc=[], spe=[], comp=[];
+  if(ids.length){
+    const [a,i,sp]=await Promise.all([
+      sb.from('tp_assegnazioni').select('*').in('turno_id',ids),
+      sb.from('tp_incassi').select('*').in('turno_id',ids),
+      sb.from('tp_spese').select('*').in('turno_id',ids)]);
+    if(errore(a.error)||errore(i.error)||errore(sp.error)) return;
+    ass=a.data; inc=i.data; spe=sp.data;
+    if(ass.length){ const k=await sb.from('tp_compensi').select('*').in('assegnazione_id',ass.map(x=>x.id)); if(errore(k.error)) return; comp=k.data; }
+  }
+  R.dati={turni,ass,inc,spe,comp}; disegnaIncassiRep();
+}
+// un record per turno con tutti i conti fatti
+function righeIncassi(){
+  const {turni,ass,inc,spe,comp}=S.irep.dati, N=x=>Number(x||0);
+  return turni.map(t=>{
+    const i=inc.find(x=>x.turno_id===t.id), sp=spe.filter(x=>x.turno_id===t.id);
+    const sq=ass.filter(a=>a.turno_id===t.id).map(a=>({a, c:collabById(a.collaboratore_id), k:comp.find(x=>x.assegnazione_id===a.id)}))
+      .sort((x,y)=>(y.a.ruolo||'').localeCompare(x.a.ruolo||'')||(x.c?.nome||'').localeCompare(y.c?.nome||''));
+    const cash=N(i?.cash), pos=N(i?.pos), perc=N(i?.percentuale_piscina), spese=sp.reduce((s,x)=>s+N(x.importo),0), compensi=sq.reduce((s,x)=>s+N(x.k?.importo),0);
+    const inviato=!!(i || sp.length);
+    return { t, p:piscinaById(t.piscina_id)||{nome:'?'}, sq, sp, i, inviato, quando:i?.inviato_il||i?.aggiornato_il, da:i?.inviato_da?collabById(i.inviato_da):null,
+      cash, pos, perc, spese, compensi, resta:cash-perc-spese-compensi, margine:cash+pos-perc-spese-compensi };
+  }).filter(r=>r.sq.length || r.inviato);
+}
+function sommaInc(rr){ return rr.reduce((s,r)=>{ ['cash','pos','perc','spese','compensi','resta','margine'].forEach(k=>s[k]+=r[k]); return s; },{cash:0,pos:0,perc:0,spese:0,compensi:0,resta:0,margine:0}); }
+function perCollabInc(rr){
+  const per={};
+  rr.forEach(r=>r.sq.forEach(({a,c,k})=>{ const id=a.collaboratore_id;
+    const v=per[id]=per[id]||{nome:c?.nome||'?', turni:0, imp:0, note:[]};
+    v.turni++; v.imp+=Number(k?.importo||0); if(k?.nota) v.note.push(k.nota); }));
+  return Object.values(per).sort((a,b)=>a.nome.localeCompare(b.nome));
+}
+function perSedeInc(rr){
+  const per={};
+  rr.forEach(r=>{ const v=per[r.p.nome]=per[r.p.nome]||{nome:r.p.nome, rr:[]}; v.rr.push(r); });
+  return Object.values(per).sort((a,b)=>a.nome.localeCompare(b.nome)).map(v=>({nome:v.nome, turni:v.rr.length, inviati:v.rr.filter(r=>r.inviato).length, ...sommaInc(v.rr)}));
+}
+function quandoInc(d){ return d ? new Date(d).toLocaleString('it-IT',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : ''; }
+function disegnaIncassiRep(){
+  const out=document.getElementById('iOut'); if(!out) return;
+  const rr=righeIncassi();
+  if(!rr.length){ out.innerHTML='<div class="vuoto">Nessun turno con squadra o incassi nel periodo scelto.</div>'; return; }
+  const tot=sommaInc(rr), inviati=rr.filter(r=>r.inviato), mancano=rr.filter(r=>!r.inviato && r.t.data<=oggi());
+  let h=`<div class="ir-tot">
+    <div><span>Report inviati</span><b>${inviati.length} / ${rr.length}</b></div>
+    <div><span>Contanti</span><b>${eur(tot.cash)}</b></div>
+    <div><span>POS</span><b>${eur(tot.pos)}</b></div>
+    <div><span>Totale incasso</span><b>${eur(tot.cash+tot.pos)}</b></div>
+    <div><span>% sedi</span><b>${eur(tot.perc)}</b></div>
+    <div><span>Spese</span><b>${eur(tot.spese)}</b></div>
+    <div><span>Compensi</span><b>${eur(tot.compensi)}</b></div>
+    <div class="forte"><span>Contanti che restano</span><b>${eur(tot.resta)}</b></div>
+    <div class="forte"><span>Margine con POS</span><b>${eur(tot.margine)}</b></div></div>`;
+  if(mancano.length) h+=`<div class="attese"><b>Report non ancora inviati (${mancano.length})</b><ul class="avvisi" style="color:var(--ink)">${mancano.map(r=>`<li>${esc(r.p.nome)}, ${nomeGiorno(r.t.data)} ${hm(r.t.ora_inizio)}–${hm(r.t.ora_fine)} · ${esc(r.sq.filter(x=>x.a.ruolo==='S').map(x=>x.c?.nome||'?').join(', ')||'nessuno stampatore')}</li>`).join('')}</ul></div>`;
+  h+='<div class="azioni" style="margin:0 0 6px"><button type="button" class="btn pri" onclick="pdfIncassiRep()">📄 Esporta PDF</button></div>';
+  // per giorno → sede → turno
+  [...new Set(rr.map(r=>r.t.data))].forEach(d=>{
+    const g=rr.filter(r=>r.t.data===d), gt=sommaInc(g);
+    h+=`<div class="giorno">${nomeGiorno(d)}<span class="ir-gtot">incasso ${eur(gt.cash+gt.pos)} · restano ${eur(gt.resta)} contanti</span></div>`;
+    g.sort((a,b)=>a.p.nome.localeCompare(b.p.nome)||hm(a.t.ora_inizio).localeCompare(hm(b.t.ora_inizio))).forEach(r=>{
+      h+=`<div class="turno" style="border-left-color:${esc(r.p.colore||'var(--water)')}">
+        <div class="t-head"><b>${esc(r.p.nome)}</b><span class="t-ora">${hm(r.t.ora_inizio)}–${hm(r.t.ora_fine)}</span>
+          <span class="stato ${r.inviato?'st-ok':'st-no'}">${r.inviato?'✓ Inviato'+(r.quando?' '+quandoInc(r.quando):'')+(r.da?' da '+esc(r.da.nome):''):r.t.data<=oggi()?'Da inviare':'Turno non ancora fatto'}</span></div>
+        ${r.inviato?`<div class="ir-num">
+          <div><span>Contanti</span><br>${eur(r.cash)}</div><div><span>POS</span><br>${eur(r.pos)}</div><div><span>% sede</span><br>${eur(r.perc)}</div>
+          <div><span>Spese</span><br>${eur(r.spese)}</div><div><span>Compensi</span><br>${eur(r.compensi)}</div><div><span>Restano (contanti)</span><br><b>${eur(r.resta)}</b></div></div>
+          ${r.sp.length?`<div class="note" style="color:var(--ink)"><b>Spese:</b> ${r.sp.map(x=>esc(x.descrizione)+' '+eur(x.importo)).join(', ')}</div>`:''}`:''}
+        <div class="ir-comp"><b>Squadra:</b> ${r.sq.map(({a,c,k})=>`${esc(c?.nome||'?')} <span class="tag">${a.ruolo==='F'?'foto':'stampa'}</span>${k?.importo!=null?' '+eur(k.importo):''}${k?.nota?' <span class="note">('+esc(k.nota)+')</span>':''}`).join(' · ')||'—'}</div>
+      </div>`;
+    });
+  });
+  const ps=perSedeInc(rr), pc=perCollabInc(rr);
+  h+=`<h3 class="ir-h">Per sede</h3><div class="griglia"><table class="riep"><thead><tr><th>Sede</th><th>Turni</th><th>Inviati</th><th>Contanti</th><th>POS</th><th>% sede</th><th>Spese</th><th>Compensi</th><th>Restano</th></tr></thead><tbody>
+    ${ps.map(v=>`<tr><td>${esc(v.nome)}</td><td>${v.turni}</td><td>${v.inviati}</td><td>${eur(v.cash)}</td><td>${eur(v.pos)}</td><td>${eur(v.perc)}</td><td>${eur(v.spese)}</td><td>${eur(v.compensi)}</td><td>${eur(v.resta)}</td></tr>`).join('')}
+    </tbody><tfoot><tr><td>Totale</td><td>${rr.length}</td><td>${inviati.length}</td><td>${eur(tot.cash)}</td><td>${eur(tot.pos)}</td><td>${eur(tot.perc)}</td><td>${eur(tot.spese)}</td><td>${eur(tot.compensi)}</td><td>${eur(tot.resta)}</td></tr></tfoot></table></div>
+  <h3 class="ir-h">Per collaboratore</h3><div class="griglia"><table class="riep"><thead><tr><th>Collaboratore</th><th>Turni</th><th>Compensi</th><th>Note</th></tr></thead><tbody>
+    ${pc.map(v=>`<tr><td>${esc(v.nome)}</td><td>${v.turni}</td><td>${eur(v.imp)}</td><td style="text-align:left;white-space:normal">${esc(v.note.join(' · '))}</td></tr>`).join('')}
+    </tbody><tfoot><tr><td>Totale</td><td></td><td>${eur(pc.reduce((s,v)=>s+v.imp,0))}</td><td></td></tr></tfoot></table></div>
+  <p class="note">Contanti che restano = contanti − % sede − spese − compensi. Il POS arriva sul conto e non entra in quel conto; il margine con POS lo comprende. I turni annullati non contano. Lo vedono solo gli organizzatori.</p>`;
+  out.innerHTML=h;
+}
+function pdfIncassiRep(){
+  const R=S.irep; if(!R||!R.dati) return;
+  const rr=righeIncassi(); if(!rr.length){ toast('Niente da esportare.',true); return; }
+  const tot=sommaInc(rr), ps=perSedeInc(rr), pc=perCollabInc(rr);
+  const fmtD=d=>{ const [y,m,g]=d.split('-').map(Number); return new Date(y,m-1,g).toLocaleDateString('it-IT',{weekday:'short',day:'numeric',month:'short',year:'numeric'}); };
+  const sede=R.sede==='tutte'?'Tutte le sedi':(piscinaById(R.sede)||{nome:'?'}).nome;
+  const giorni=[...new Set(rr.map(r=>r.t.data))].map(d=>{
+    const g=rr.filter(r=>r.t.data===d).sort((a,b)=>a.p.nome.localeCompare(b.p.nome)||hm(a.t.ora_inizio).localeCompare(hm(b.t.ora_inizio))), gt=sommaInc(g);
+    return `<section><h3>${esc(fmtD(d))}</h3><table><thead><tr><th>Sede</th><th>Orario</th><th>Squadra e compensi</th><th>Contanti</th><th>POS</th><th>% sede</th><th>Spese</th><th>Restano</th></tr></thead><tbody>
+      ${g.map(r=>`<tr><td>${esc(r.p.nome)}${r.inviato?'':'<br><span class="r">da inviare</span>'}</td><td>${hm(r.t.ora_inizio)}–${hm(r.t.ora_fine)}</td>
+        <td class="sx">${r.sq.map(({a,c,k})=>esc(c?.nome||'?')+' ('+(a.ruolo==='F'?'F':'S')+')'+(k?.importo!=null?' '+eur(k.importo):'')+(k?.nota?' – '+esc(k.nota):'')).join('<br>')}${r.sp.length?'<br><span class="g">Spese: '+r.sp.map(x=>esc(x.descrizione)+' '+eur(x.importo)).join(', ')+'</span>':''}</td>
+        <td>${eur(r.cash)}</td><td>${eur(r.pos)}</td><td>${eur(r.perc)}</td><td>${eur(r.spese)}</td><td><b>${eur(r.resta)}</b></td></tr>`).join('')}
+      </tbody><tfoot><tr><td colspan="3">Totale giorno (compensi ${eur(gt.compensi)})</td><td>${eur(gt.cash)}</td><td>${eur(gt.pos)}</td><td>${eur(gt.perc)}</td><td>${eur(gt.spese)}</td><td>${eur(gt.resta)}</td></tr></tfoot></table></section>`; }).join('');
+  const html=`<!doctype html><html lang="it"><head><meta charset="utf-8"><title>Report incassi ${esc(R.da)} – ${esc(R.a)}</title>
+<style>
+@page{size:A4;margin:12mm}
+*{box-sizing:border-box} body{font:10pt/1.35 'Jost',system-ui,'Segoe UI',sans-serif;color:#111;margin:0}
+h1{font-size:18pt;margin:0 0 2px} .sub{color:#6B6C70;margin:0 0 12px} .bar{height:4px;background:#EB0089;margin:0 0 12px}
+h2{font-size:13pt;margin:18px 0 6px} h3{font-size:11pt;margin:14px 0 4px;text-transform:capitalize}
+table{width:100%;border-collapse:collapse;font-size:9pt} th,td{border-bottom:1px solid #E1E1E4;padding:4px 5px;text-align:right;vertical-align:top}
+th:first-child,td:first-child,td.sx,th:nth-child(3){text-align:left} th{background:#F4F4F5;font-weight:600} tfoot td{font-weight:700;border-top:2px solid #111}
+section{break-inside:avoid} .g{color:#6B6C70} .r{color:#C8333A} .note{color:#6B6C70;font-size:8.5pt;margin-top:8px}
+.tot td:first-child{font-weight:600}
+@media screen{body{max-width:900px;margin:20px auto;padding:0 16px}}
+</style></head><body>
+<div class="bar"></div><h1>Report incassi</h1><p class="sub">dal ${esc(fmtD(R.da))} al ${esc(fmtD(R.a))} · ${esc(sede)} · report inviati ${rr.filter(r=>r.inviato).length} su ${rr.length}</p>
+<table class="tot"><tbody>
+<tr><td>Contanti</td><td>${eur(tot.cash)}</td><td>POS</td><td>${eur(tot.pos)}</td><td>Totale incasso</td><td>${eur(tot.cash+tot.pos)}</td></tr>
+<tr><td>% sedi</td><td>${eur(tot.perc)}</td><td>Spese</td><td>${eur(tot.spese)}</td><td>Compensi</td><td>${eur(tot.compensi)}</td></tr>
+<tr><td>Contanti che restano</td><td><b>${eur(tot.resta)}</b></td><td>Margine con POS</td><td><b>${eur(tot.margine)}</b></td><td></td><td></td></tr></tbody></table>
+<h2>Per giorno</h2>${giorni}
+<h2>Per sede</h2><table><thead><tr><th>Sede</th><th>Turni</th><th>Inviati</th><th>Contanti</th><th>POS</th><th>% sede</th><th>Spese</th><th>Compensi</th><th>Restano</th></tr></thead><tbody>
+${ps.map(v=>`<tr><td>${esc(v.nome)}</td><td>${v.turni}</td><td>${v.inviati}</td><td>${eur(v.cash)}</td><td>${eur(v.pos)}</td><td>${eur(v.perc)}</td><td>${eur(v.spese)}</td><td>${eur(v.compensi)}</td><td>${eur(v.resta)}</td></tr>`).join('')}
+</tbody></table>
+<h2>Per collaboratore</h2><table><thead><tr><th>Collaboratore</th><th>Turni</th><th>Compensi</th><th style="text-align:left">Note</th></tr></thead><tbody>
+${pc.map(v=>`<tr><td>${esc(v.nome)}</td><td>${v.turni}</td><td>${eur(v.imp)}</td><td class="sx">${esc(v.note.join(' · '))}</td></tr>`).join('')}
+</tbody><tfoot><tr><td>Totale</td><td></td><td>${eur(pc.reduce((s,v)=>s+v.imp,0))}</td><td></td></tr></tfoot></table>
+<p class="note">Contanti che restano = contanti − % sede − spese − compensi. Il POS arriva sul conto. I turni annullati non contano. Frame About You · creato il ${esc(new Date().toLocaleDateString('it-IT'))}</p>
+<script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script></body></html>`;
+  const w=window.open('','_blank');
+  if(!w){ toast('Il browser ha bloccato la finestra: consenti i popup per questo sito.',true); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+}
+
 // ---------- INCASSI E LINK ----------
 function eur(n){ return (Number(n)||0).toLocaleString('it-IT',{style:'currency',currency:'EUR'}); }
 function compensiTurno(t){
@@ -2052,7 +2211,7 @@ async function formLinkIncassi(id, rigenera){
   const testo = c => 'Ciao '+c.nome+', ecco il link per inserire gli incassi di '+p.nome+' di '+nomeGiorno(t.data)+': '+url;
   apriDialog('Link incassi', `
     <p style="margin:0 0 4px"><b>${esc(p.nome)}</b>, ${nomeGiorno(t.data)}, ${hm(t.ora_inizio)}–${hm(t.ora_fine)}</p>
-    <p class="note" style="margin:0 0 12px">Va mandato solo agli stampatori del turno. Funziona fino a ${scadenza(t)} compreso.</p>
+    <p class="note" style="margin:0 0 12px">Va mandato solo agli stampatori del turno. Funziona fino a ${scadenza(t)} compreso.<br>Non serve più per forza: gli stampatori trovano “Inserisci incassi” anche nel calendario, su <b>I miei turni</b>, dal giorno del turno.</p>
     ${stampatori.map(c=>{const n=telefonoWa(c.telefono);
       return `<div class="cand"><span class="n">${esc(c.nome)}</span><span class="b">${n?`<a class="btn pic pri" style="text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/${n}?text=${encodeURIComponent(testo(c))}">WhatsApp</a>`:''}</span><span class="d">${n?esc(c.telefono):'Nessun telefono nella scheda: usa “Copia link”'}</span></div>`;}).join('')}
     <div class="azioni" style="margin-top:14px">
